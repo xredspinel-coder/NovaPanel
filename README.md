@@ -43,7 +43,16 @@ For a quick verification run, use build instead of dev:
 npm run build
 ```
 
-The app checks the signed-in Firebase user against `admins/{uid}`. Create the first admin document from the Firebase console or with the Admin SDK before using the dashboard.
+The app checks the signed-in Firebase user against `admins/{uid}`. The document must be active and have an approved role:
+
+```json
+{
+  "role": "owner",
+  "active": true
+}
+```
+
+Supported roles are `owner` and `admin`. `owner` can manage admin documents through the rules; both `owner` and `admin` can access dashboard data.
 
 ## Firestore Rules
 
@@ -54,6 +63,14 @@ AniSeekDashboard/firestore.rules
 ```
 
 Deploy those rules with Firebase CLI from this folder or point your Firebase config at this file.
+
+`firebase.json` is included so Firebase CLI knows that `firestore.rules` is the rules file:
+
+```bash
+firebase deploy --only firestore:rules --project your-firebase-project-id
+```
+
+For local Firebase CLI convenience, copy `.firebaserc.example` to `.firebaserc` and set your project id.
 
 ## Deployment
 

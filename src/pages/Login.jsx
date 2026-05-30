@@ -26,9 +26,11 @@ export function Login() {
   return (
     <main className="grid min-h-screen place-items-center bg-ink px-4 text-text">
       <form onSubmit={handleSubmit} className="w-full max-w-sm rounded-lg border border-line bg-panel p-6 backdrop-blur">
-        <p className="text-xs uppercase tracking-[0.28em] text-primary">AniSeek</p>
-        <h1 className="mt-3 text-2xl font-semibold text-white">Dashboard login</h1>
-        <p className="mt-2 text-sm text-white/45">Use a Firebase Auth account that exists in `admins/uid`.</p>
+        <p className="text-xs uppercase tracking-[0.28em] text-primary">NovaPanel</p>
+        <h1 className="mt-3 text-2xl font-semibold text-text">Dashboard login</h1>
+        <p className="mt-2 text-sm text-text/54">
+          Use a Firebase Auth account with an active `admins/uid` document.
+        </p>
 
         <div className="mt-6 space-y-4">
           <input

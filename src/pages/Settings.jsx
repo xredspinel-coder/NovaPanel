@@ -79,8 +79,8 @@ export function Settings() {
   return (
     <form onSubmit={saveSettings} className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-white">Settings</h1>
-        <p className="text-sm text-white/45">These values are stored in `settings/global` and read by the bot on user updates.</p>
+        <h1 className="text-2xl font-semibold text-text">Settings</h1>
+        <p className="text-sm text-text/54">These values are stored in `settings/global` and read by the bot on user updates.</p>
       </div>
 
       <section className="grid gap-4 lg:grid-cols-2">
@@ -112,7 +112,7 @@ export function Settings() {
             ["enableVideoPreview", "Video preview"],
             ["maintenanceMode", "Maintenance mode"]
           ].map(([key, label]) => (
-            <label key={key} className="flex items-center justify-between gap-3 rounded-md border border-line px-3 py-3 text-sm text-white/75">
+            <label key={key} className="flex items-center justify-between gap-3 rounded-md border border-line px-3 py-3 text-sm text-text/76">
               <span>{label}</span>
               <input
                 type="checkbox"

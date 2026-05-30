@@ -34,8 +34,8 @@ export function Errors() {
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-white">Errors</h1>
-          <p className="text-sm text-white/45">Bot failures written to the `errors` collection.</p>
+          <h1 className="text-2xl font-semibold text-text">Errors</h1>
+          <p className="text-sm text-text/54">Bot failures written to the `errors` collection.</p>
         </div>
         <input className={`${inputClass} sm:max-w-xs`} placeholder="Search errors" value={search} onChange={(event) => setSearch(event.target.value)} />
       </div>
@@ -45,7 +45,7 @@ export function Errors() {
       ) : (
         <div className="overflow-x-auto rounded-lg border border-line bg-panel backdrop-blur">
           <table className="w-full min-w-[860px] text-left text-sm">
-            <thead className="text-xs uppercase tracking-[0.16em] text-white/35">
+            <thead className="text-xs uppercase tracking-[0.16em] text-text/42">
               <tr>
                 <th className="px-4 py-3">Message</th>
                 <th>User</th>
@@ -56,8 +56,8 @@ export function Errors() {
             </thead>
             <tbody className="divide-y divide-line">
               {filtered.map((error) => (
-                <tr key={error.id} className="text-white/70">
-                  <td className="px-4 py-3 text-white">{error.message || "Unknown error"}</td>
+                <tr key={error.id} className="text-text/72">
+                  <td className="px-4 py-3 text-text">{error.message || "Unknown error"}</td>
                   <td>{error.userId || "-"}</td>
                   <td>{error.source || "-"}</td>
                   <td className="max-w-xs truncate">{error.inputUrl || "-"}</td>

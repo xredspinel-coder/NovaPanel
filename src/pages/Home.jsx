@@ -28,8 +28,8 @@ export function Home() {
 
       <section className="rounded-lg border border-line bg-panel p-4 backdrop-blur">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-white">Latest activity</h2>
-          <span className="text-xs text-white/35">Firestore live</span>
+          <h2 className="text-lg font-semibold text-text">Latest activity</h2>
+          <span className="text-xs text-text/42">Firestore live</span>
         </div>
 
         {activities.data.length === 0 ? (
@@ -37,7 +37,7 @@ export function Home() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="text-xs uppercase tracking-[0.16em] text-white/35">
+              <thead className="text-xs uppercase tracking-[0.16em] text-text/42">
                 <tr>
                   <th className="py-3">Anime</th>
                   <th>Status</th>
@@ -48,8 +48,8 @@ export function Home() {
               </thead>
               <tbody className="divide-y divide-line">
                 {activities.data.map((activity) => (
-                  <tr key={activity.id} className="text-white/70">
-                    <td className="py-3 text-white">{activity.animeTitle || "Unknown"}</td>
+                  <tr key={activity.id} className="text-text/72">
+                    <td className="py-3 text-text">{activity.animeTitle || "Unknown"}</td>
                     <td><StatusPill status={activity.status} /></td>
                     <td>{activity.userId}</td>
                     <td>{activity.similarity ?? "-"}%</td>

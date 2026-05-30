@@ -3,8 +3,15 @@
 @tailwind utilities;
 
 :root {
-  --primary-color: #9b5cff;
-  --text-color: #f5f2ff;
+  --background-color: #1f1c22;
+  --surface-color: #2b2232;
+  --primary-color: #d5a9f4;
+  --text-color: #e3d5ed;
+  --background-rgb: 31 28 34;
+  --surface-rgb: 43 34 50;
+  --primary-rgb: 213 169 244;
+  --text-rgb: 227 213 237;
+  --line-rgb: 227 213 237;
   --font-size: 14px;
   --font-family: Inter;
   color-scheme: dark;
@@ -16,7 +23,7 @@
 
 html {
   min-height: 100%;
-  background: #07070b;
+  background: var(--background-color);
   font-size: var(--font-size);
 }
 
@@ -24,10 +31,12 @@ body {
   min-height: 100%;
   margin: 0;
   background:
-    radial-gradient(circle at 16% 10%, color-mix(in srgb, var(--primary-color) 18%, transparent), transparent 26rem),
-    linear-gradient(135deg, #07070b 0%, #101018 42%, #07070b 100%);
+    radial-gradient(circle at 15% 8%, rgb(var(--primary-rgb) / 0.14), transparent 24rem),
+    radial-gradient(circle at 84% 10%, rgb(var(--surface-rgb) / 0.45), transparent 28rem),
+    linear-gradient(135deg, var(--background-color) 0%, color-mix(in srgb, var(--background-color) 82%, var(--surface-color) 18%) 52%, var(--background-color) 100%);
   color: var(--text-color);
   font-family: var(--font-family), Inter, ui-sans-serif, system-ui, sans-serif;
+  transition: background 220ms ease, color 220ms ease;
 }
 
 button,
@@ -37,8 +46,8 @@ select {
 }
 
 select option {
-  background: #0c0c12;
-  color: #fff;
+  background: var(--surface-color);
+  color: var(--text-color);
 }
 
 ::-webkit-scrollbar {
@@ -47,6 +56,52 @@ select option {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.14);
+  background: rgb(var(--text-rgb) / 0.18);
   border-radius: 999px;
+}
+
+.nav-tooltip {
+  position: absolute;
+  left: calc(100% + 16px);
+  top: 50%;
+  z-index: 40;
+  transform: translate(4px, -50%);
+  border: 1px solid rgb(var(--line-rgb) / 0.12);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--surface-color) 88%, black 12%);
+  color: rgb(var(--text-rgb) / 0.9);
+  box-shadow: 0 14px 32px rgb(0 0 0 / 0.26);
+  opacity: 0;
+  padding: 0.34rem 0.52rem;
+  pointer-events: none;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  line-height: 1;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.nav-tooltip::before {
+  content: "";
+  position: absolute;
+  left: -5px;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  transform: translateY(-50%) rotate(45deg);
+  border-bottom: 1px solid rgb(var(--line-rgb) / 0.12);
+  border-left: 1px solid rgb(var(--line-rgb) / 0.12);
+  background: color-mix(in srgb, var(--surface-color) 88%, black 12%);
+}
+
+.group\/nav:hover .nav-tooltip,
+.group\/nav:focus-visible .nav-tooltip {
+  opacity: 1;
+  transform: translate(0, -50%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body,
+  .nav-tooltip {
+    transition: none;
+  }
 }

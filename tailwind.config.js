@@ -6,11 +6,11 @@ export default {
         ui: ["var(--font-family)", "Inter", "ui-sans-serif", "system-ui", "sans-serif"]
       },
       colors: {
-        ink: "#07070b",
-        panel: "rgba(18, 18, 28, 0.76)",
-        line: "rgba(255, 255, 255, 0.08)",
-        text: "var(--text-color)",
-        primary: "var(--primary-color)"
+        ink: "rgb(var(--background-rgb) / <alpha-value>)",
+        panel: "rgb(var(--surface-rgb) / <alpha-value>)",
+        line: "rgb(var(--line-rgb) / 0.12)",
+        text: "rgb(var(--text-rgb) / <alpha-value>)",
+        primary: "rgb(var(--primary-rgb) / <alpha-value>)"
       }
     }
   },

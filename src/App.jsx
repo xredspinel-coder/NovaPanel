@@ -29,7 +29,7 @@ export default function App() {
   const [page, setPage] = useState("home");
 
   if (authState.loading) {
-    return <main className="grid min-h-screen place-items-center bg-ink text-sm text-white/50">Loading AniSeek...</main>;
+    return <main className="grid min-h-screen place-items-center bg-ink text-sm text-text/58">Loading AniSeek...</main>;
   }
 
   if (!authState.user) {
@@ -40,12 +40,16 @@ export default function App() {
     return (
       <main className="grid min-h-screen place-items-center bg-ink px-4 text-text">
         <div className="max-w-md rounded-lg border border-line bg-panel p-6 text-center backdrop-blur">
-          <h1 className="text-xl font-semibold text-white">Admin access required</h1>
-          <p className="mt-2 text-sm text-white/45">
-            Create <code className="text-primary">admins/{authState.user.uid}</code> in Firestore, then sign in again.
+          <h1 className="text-xl font-semibold text-text">Admin access required</h1>
+          <p className="mt-2 text-sm text-text/54">
+            Signed in as <span className="text-text">{authState.user.email}</span>. This account must have an active
+            admin document at <code className="text-primary">admins/{authState.user.uid}</code>.
+          </p>
+          <p className="mt-3 text-xs text-text/42">
+            Required fields: <code>active: true</code> and <code>role: owner</code> or <code>role: admin</code>.
           </p>
           {authState.error ? <p className="mt-3 text-sm text-red-300">{authState.error}</p> : null}
-          <button className="mt-6 rounded-md border border-primary/40 px-4 py-2 text-sm text-white" type="button" onClick={() => signOut(auth)}>
+          <button className="mt-6 rounded-md border border-primary/40 px-4 py-2 text-sm text-text transition hover:border-primary" type="button" onClick={() => signOut(auth)}>
             Sign out
           </button>
         </div>
@@ -61,10 +65,10 @@ export default function App() {
       <div className="pl-14">
         <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-line bg-ink/80 px-4 backdrop-blur-xl sm:px-6">
           <div>
-            <p className="text-xs uppercase tracking-[0.22em] text-primary">AniSeek</p>
-            <p className="text-sm text-white/45">{authState.user.email}</p>
+            <p className="text-xs uppercase tracking-[0.22em] text-primary">NovaPanel</p>
+            <p className="text-sm text-text/52">{authState.user.email}</p>
           </div>
-          <button className="rounded-md border border-line px-3 py-2 text-sm text-white/70 transition hover:text-primary" type="button" onClick={() => signOut(auth)}>
+          <button className="rounded-md border border-line px-3 py-2 text-sm text-text/72 transition hover:border-primary hover:text-primary" type="button" onClick={() => signOut(auth)}>
             Sign out
           </button>
         </header>
