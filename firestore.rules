@@ -1,0 +1,46 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    match /admins/{uid} {
+      allow get: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow list, create, update, delete: if isAdmin();
+    }
+
+    match /settings/{document} {
+      allow read, write: if isAdmin();
+    }
+
+    match /users/{telegramId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /activities/{activityId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /errors/{errorId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /analytics/{document=**} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
