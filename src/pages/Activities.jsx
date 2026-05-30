@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { collection, limit, orderBy, query } from "firebase/firestore";
-import { Grid2X2, List, X } from "lucide-react";
+import ReactPlayer from "react-player";
+import { Download, ExternalLink, Grid2X2, List, PlayCircle, X } from "lucide-react";
 import { db } from "../firebase.js";
 import { EmptyState } from "../components/EmptyState.jsx";
 import { StatusPill } from "../components/StatusPill.jsx";
@@ -33,8 +34,37 @@ function displayUser(activity) {
   };
 }
 
+function resolveActivityMedia(activity = {}) {
+  const inputImage =
+    activity.media?.inputImageUrl ||
+    activity.media?.inputTelegramFileUrl ||
+    activity.inputPreview ||
+    activity.inputThumbnail ||
+    activity.inputUrl ||
+    null;
+
+  const resultImage =
+    activity.media?.resultImageUrl ||
+    activity.media?.botImageUrl ||
+    activity.imageUrl ||
+    null;
+
+  const resultVideo =
+    activity.media?.resultVideoUrl ||
+    activity.media?.botVideoUrl ||
+    activity.videoUrl ||
+    null;
+
+  return {
+    inputImage,
+    resultImage,
+    resultVideo
+  };
+}
+
 function previewUrl(activity) {
-  return activity.inputPreview || activity.inputThumbnail || activity.imageUrl || activity.inputUrl || null;
+  const media = resolveActivityMedia(activity);
+  return media.inputImage || media.resultImage || null;
 }
 
 function DetailRow({ label, value, href }) {
@@ -56,6 +86,71 @@ function DetailRow({ label, value, href }) {
   );
 }
 
+function MediaImage({ label, src, alt }) {
+  if (!src) {
+    return null;
+  }
+
+  return (
+    <div>
+      <p className="mb-2 text-xs uppercase tracking-[0.16em] text-text/38">{label}</p>
+      <img className="aspect-video w-full rounded-lg border border-line object-cover" src={src} alt={alt} />
+    </div>
+  );
+}
+
+function VideoPreview({ src }) {
+  const [videoFailed, setVideoFailed] = useState(false);
+
+  useEffect(() => {
+    setVideoFailed(false);
+  }, [src]);
+
+  if (!src) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs uppercase tracking-[0.16em] text-text/38">Video preview</p>
+      <div className="overflow-hidden rounded-lg border border-line bg-black">
+        <div className="aspect-video">
+          {videoFailed ? (
+            <div className="grid h-full place-items-center px-4 text-center text-sm text-text/58">
+              <span>
+                Video preview could not load here.{" "}
+                <a className="text-primary hover:text-text" href={src} target="_blank" rel="noreferrer">
+                  Open video
+                </a>
+              </span>
+            </div>
+          ) : (
+            <ReactPlayer
+              src={src}
+              controls
+              playing={false}
+              muted={false}
+              width="100%"
+              height="100%"
+              onError={() => setVideoFailed(true)}
+            />
+          )}
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <a className={`${buttonClass} inline-flex items-center gap-2`} href={src} target="_blank" rel="noreferrer" download>
+          <Download className="h-4 w-4" />
+          Download video
+        </a>
+        <a className={`${buttonClass} inline-flex items-center gap-2`} href={src} target="_blank" rel="noreferrer">
+          <ExternalLink className="h-4 w-4" />
+          Open video
+        </a>
+      </div>
+    </div>
+  );
+}
+
 function ActivityDetails({ activity, onClose }) {
   if (!activity) {
     return null;
@@ -63,7 +158,7 @@ function ActivityDetails({ activity, onClose }) {
 
   const user = displayUser(activity);
   const botResponse = activity.botResponse || {};
-  const image = previewUrl(activity);
+  const media = resolveActivityMedia(activity);
   const similarity = botResponse.similarity ?? activity.similarity;
 
   return (
@@ -80,9 +175,9 @@ function ActivityDetails({ activity, onClose }) {
         </header>
 
         <div className="space-y-6 overflow-y-auto p-5">
-          {image ? (
-            <img className="aspect-video w-full rounded-lg border border-line object-cover" src={image} alt="User input preview" />
-          ) : null}
+          <MediaImage label="User input preview" src={media.inputImage} alt="User input preview" />
+          <MediaImage label="Bot/result image preview" src={media.resultImage} alt="Bot result preview" />
+          <VideoPreview src={media.resultVideo} />
 
           <section className="grid gap-4 sm:grid-cols-2">
             <DetailRow label="Status" value={normalizeStatus(activity.status)} />
@@ -117,8 +212,6 @@ function ActivityDetails({ activity, onClose }) {
               <DetailRow label="Similarity" value={similarity !== null && similarity !== undefined ? `${similarity}%` : null} />
               <DetailRow label="Time range" value={botResponse.time || activity.formattedTime} />
               <DetailRow label="AniList" value={activity.anilistUrl ? "Open AniList" : null} href={activity.anilistUrl} />
-              <DetailRow label="Video preview" value={activity.videoUrl ? "Open video" : null} href={activity.videoUrl} />
-              <DetailRow label="Preview image" value={activity.imageUrl ? "Open image" : null} href={activity.imageUrl} />
               <DetailRow label="Message" value={botResponse.message} />
             </div>
           </section>
@@ -209,15 +302,24 @@ export function Activities() {
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {filtered.map((activity) => {
             const image = previewUrl(activity);
+            const media = resolveActivityMedia(activity);
             const user = displayUser(activity);
 
             return (
               <button key={activity.id} type="button" onClick={() => setSelectedActivity(activity)} className="overflow-hidden rounded-lg border border-line bg-panel text-left transition hover:border-primary">
-                {image ? (
-                  <img className="aspect-video w-full object-cover" src={image} alt="Activity preview" />
-                ) : (
-                  <div className="grid aspect-video place-items-center bg-ink/28 text-sm text-text/42">No preview</div>
-                )}
+                <div className="relative">
+                  {image ? (
+                    <img className="aspect-video w-full object-cover" src={image} alt="Activity preview" />
+                  ) : (
+                    <div className="grid aspect-video place-items-center bg-ink/28 text-sm text-text/42">No preview</div>
+                  )}
+                  {media.resultVideo ? (
+                    <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-md border border-primary/30 bg-ink/80 px-2 py-1 text-xs font-medium text-primary backdrop-blur">
+                      <PlayCircle className="h-3.5 w-3.5 fill-current" />
+                      Video
+                    </span>
+                  ) : null}
+                </div>
                 <div className="space-y-3 p-4">
                   <div className="flex items-center justify-between gap-3">
                     <StatusPill status={normalizeStatus(activity.status)} />
@@ -253,6 +355,7 @@ export function Activities() {
             <tbody className="divide-y divide-line">
               {filtered.map((activity) => {
                 const user = displayUser(activity);
+                const media = resolveActivityMedia(activity);
 
                 return (
                   <tr key={activity.id} className="cursor-pointer text-text/72 transition hover:bg-ink/20" onClick={() => setSelectedActivity(activity)}>
@@ -268,7 +371,12 @@ export function Activities() {
                     <td>
                       <div className="flex gap-3">
                         {activity.anilistUrl ? <a className="text-primary hover:text-text" href={activity.anilistUrl} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>AniList</a> : null}
-                        {activity.videoUrl ? <a className="text-primary hover:text-text" href={activity.videoUrl} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>Video</a> : null}
+                        {media.resultVideo ? (
+                          <a className="inline-flex items-center gap-1 text-primary hover:text-text" href={media.resultVideo} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>
+                            <PlayCircle className="h-3.5 w-3.5 fill-current" />
+                            Video
+                          </a>
+                        ) : null}
                       </div>
                     </td>
                     <td>{formatDate(activity.createdAt)}</td>
