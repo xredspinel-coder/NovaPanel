@@ -6,53 +6,53 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function adminPath(uid) {
-      return /databases/$(database)/documents/admins/$(uid);
+    function adminDoc() {
+      return get(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
 
-    function hasAdminRole(data) {
-      return data.active == true && data.role in ['owner', 'admin'];
-    }
-
-    function isAdmin() {
+    function isActiveAdmin() {
       return signedIn()
-        && exists(adminPath(request.auth.uid))
-        && hasAdminRole(get(adminPath(request.auth.uid)).data);
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        && adminDoc().data.active == true
+        && adminDoc().data.role in ["owner", "admin"];
     }
 
     function isOwner() {
       return signedIn()
-        && exists(adminPath(request.auth.uid))
-        && get(adminPath(request.auth.uid)).data.active == true
-        && get(adminPath(request.auth.uid)).data.role == 'owner';
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        && adminDoc().data.active == true
+        && adminDoc().data.role == "owner";
     }
 
     match /admins/{uid} {
-      allow get: if signedIn() && (request.auth.uid == uid || isAdmin());
-      allow list: if isAdmin();
+      allow get: if signedIn() && (request.auth.uid == uid || isActiveAdmin());
+      allow list: if isActiveAdmin();
       allow create, update, delete: if isOwner();
     }
 
     match /settings/{document} {
-      allow read, write: if isAdmin();
+      allow read, write: if isActiveAdmin();
     }
 
     match /users/{telegramId} {
-      allow read, write: if isAdmin();
+      allow read, update, delete: if isActiveAdmin();
+      allow create: if false;
     }
 
     match /activities/{activityId} {
-      allow read: if isAdmin();
-      allow write: if false;
+      allow read: if isActiveAdmin();
+      allow delete: if isActiveAdmin();
+      allow create, update: if false;
     }
 
     match /errors/{errorId} {
-      allow read: if isAdmin();
-      allow write: if false;
+      allow read: if isActiveAdmin();
+      allow delete: if isActiveAdmin();
+      allow create, update: if false;
     }
 
     match /analytics/{document=**} {
-      allow read: if isAdmin();
+      allow read: if isActiveAdmin();
       allow write: if false;
     }
 

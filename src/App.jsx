@@ -13,6 +13,7 @@ import { Analytics } from "./pages/Analytics.jsx";
 import { Settings } from "./pages/Settings.jsx";
 import { Appearance } from "./pages/Appearance.jsx";
 import { Errors } from "./pages/Errors.jsx";
+import { DeveloperConsole } from "./pages/DeveloperConsole.jsx";
 
 const pages = {
   home: Home,
@@ -20,7 +21,8 @@ const pages = {
   activities: Activities,
   analytics: Analytics,
   settings: Settings,
-  errors: Errors
+  errors: Errors,
+  "developer-console": DeveloperConsole
 };
 
 export default function App() {

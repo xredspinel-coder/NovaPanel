@@ -1,6 +1,6 @@
 # AniSeekDashboard
 
-AniSeekDashboard is a standalone Vite React app. It does not call the bot server and does not know the bot `BASE_URL`. It uses Firebase Auth and Firestore directly.
+AniSeekDashboard is a Vite React app. It uses Firebase Auth and Firestore directly for admin data, and can call the bot server only to resolve stored Telegram file IDs into current Telegram file URLs for media previews.
 
 ## Stack
 
@@ -24,9 +24,10 @@ VITE_FIREBASE_PROJECT_ID=
 VITE_FIREBASE_STORAGE_BUCKET=
 VITE_FIREBASE_MESSAGING_SENDER_ID=
 VITE_FIREBASE_APP_ID=
+VITE_BOT_API_BASE_URL=
 ```
 
-There is no `VITE_API_BASE_URL`.
+Set `VITE_BOT_API_BASE_URL` to the public AniSeekBot origin, for example `https://your-bot-host.example.com`. Leave it blank if you do not need Telegram file ID previews in the dashboard.
 
 ## Local Development
 
@@ -81,7 +82,7 @@ npm install
 npm run build
 ```
 
-Upload `dist/`. The Telegram bot is not required on the dashboard host.
+Upload `dist/`. The Telegram bot is only required for dynamic Telegram file ID media resolution.
 
 ## Pages
 

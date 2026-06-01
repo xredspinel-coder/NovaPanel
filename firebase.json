@@ -3,12 +3,9 @@
     "rules": "firestore.rules"
   },
   "hosting": {
+    "site": "aniseek",
     "public": "dist",
-    "ignore": [
-      "firebase.json",
-      "**/.*",
-      "**/node_modules/**"
-    ],
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
     "rewrites": [
       {
         "source": "**",

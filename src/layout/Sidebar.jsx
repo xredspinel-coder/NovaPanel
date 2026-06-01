@@ -5,6 +5,7 @@ import {
   Home,
   Palette,
   Settings,
+  SquareTerminal,
   Users
 } from "lucide-react";
 
@@ -15,7 +16,8 @@ const items = [
   { id: "analytics", label: "Analytics", icon: BarChart3 },
   { id: "settings", label: "Settings", icon: Settings },
   { id: "appearance", label: "Appearance", icon: Palette },
-  { id: "errors", label: "Errors", icon: AlertTriangle }
+  { id: "errors", label: "Errors", icon: AlertTriangle },
+  { id: "developer-console", label: "Developer Console", icon: SquareTerminal }
 ];
 
 export function Sidebar({ currentPage, onChangePage }) {

@@ -1,12 +1,43 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "../firebase.js";
 
 const adminRoles = new Set(["owner", "admin"]);
+const adminVerificationRequests = new Map();
 
 function isActiveAdmin(data) {
   return data?.active === true && adminRoles.has(data?.role);
+}
+
+async function verifyAdmin(uid) {
+  if (!adminVerificationRequests.has(uid)) {
+    const request = getDoc(doc(db, "admins", uid))
+      .then((adminSnapshot) => {
+        const adminData = adminSnapshot.exists() ? adminSnapshot.data() : null;
+
+        return {
+          exists: adminSnapshot.exists(),
+          data: adminData,
+          isAdmin: isActiveAdmin(adminData)
+        };
+      })
+      .finally(() => {
+        adminVerificationRequests.delete(uid);
+      });
+
+    adminVerificationRequests.set(uid, request);
+  }
+
+  return adminVerificationRequests.get(uid);
+}
+
+function authErrorMessage(error, uid) {
+  if (error.code === "permission-denied") {
+    return `Firestore denied reading admins/${uid}. Deploy the dashboard Firestore rules and confirm this app points to the project that contains the admin document.`;
+  }
+
+  return error.message;
 }
 
 export function useAuth() {
@@ -17,46 +48,64 @@ export function useAuth() {
     loading: true,
     error: null
   });
+  const verificationRunRef = useRef(0);
 
   useEffect(() => {
-    return onAuthStateChanged(auth, async (user) => {
+    let active = true;
+
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      const verificationRun = verificationRunRef.current + 1;
+      verificationRunRef.current = verificationRun;
+
       if (!user) {
-        setState({
-          user: null,
-          isAdmin: false,
-          admin: null,
-          loading: false,
-          error: null
-        });
+        if (active) {
+          setState({
+            user: null,
+            isAdmin: false,
+            admin: null,
+            loading: false,
+            error: null
+          });
+        }
         return;
       }
 
       try {
-        const adminSnapshot = await getDoc(doc(db, "admins", user.uid));
-        const adminData = adminSnapshot.exists() ? adminSnapshot.data() : null;
-        const isAdmin = isActiveAdmin(adminData);
+        const adminVerification = await verifyAdmin(user.uid);
+
+        if (!active || verificationRunRef.current !== verificationRun) {
+          return;
+        }
 
         setState({
           user,
-          isAdmin,
-          admin: adminData,
+          isAdmin: adminVerification.isAdmin,
+          admin: adminVerification.data,
           loading: false,
-          error: adminSnapshot.exists() && !isAdmin
+          error: adminVerification.exists && !adminVerification.isAdmin
             ? "Your admin record exists, but it is not active or has an unsupported role."
             : null
         });
       } catch (error) {
+        if (!active || verificationRunRef.current !== verificationRun) {
+          return;
+        }
+
         setState({
           user,
           isAdmin: false,
           admin: null,
           loading: false,
-          error: error.code === "permission-denied"
-            ? `Firestore denied reading admins/${user.uid}. Deploy the dashboard Firestore rules and confirm this app points to the project that contains the admin document.`
-            : error.message
+          error: authErrorMessage(error, user.uid)
         });
       }
     });
+
+    return () => {
+      active = false;
+      verificationRunRef.current += 1;
+      unsubscribe();
+    };
   }, []);
 
   return state;
