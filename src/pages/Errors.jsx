@@ -6,6 +6,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog.jsx";
 import { EmptyState } from "../components/EmptyState.jsx";
 import { StatusPill } from "../components/StatusPill.jsx";
 import { buttonClass, inputClass } from "../components/Field.jsx";
+import { ImageLightbox } from "../components/ImageLightbox.jsx";
 import { useFirestoreCollection } from "../hooks/useFirestoreCollection.js";
 import { failureLabel, isTechnicalFailure, normalizeActivityStatus } from "../utils/activityTypes.js";
 import { deleteFirestoreDocument } from "../utils/firestoreDelete.js";
@@ -64,6 +65,51 @@ function inputUrl(record) {
   return record.inputUrl || record.userInput?.url || record.userInput?.inputUrl || "";
 }
 
+function isPreviewImageUrl(value) {
+  if (typeof value !== "string" || !value.trim()) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(value);
+
+    if (["blob:", "data:"].includes(parsed.protocol)) {
+      return true;
+    }
+
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      return false;
+    }
+
+    return (
+      /^https:\/\/api\.telegram\.org\/file\//i.test(parsed.href) ||
+      /^https:\/\/api\.trace\.moe\/image\//i.test(parsed.href) ||
+      /\.(?:avif|gif|jpe?g|png|webp)$/i.test(parsed.pathname)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function errorPreviewImageUrl(record = {}) {
+  const media = record.media && typeof record.media === "object" ? record.media : {};
+  const botResponse = record.botResponse && typeof record.botResponse === "object" ? record.botResponse : {};
+
+  return [
+    media.inputTelegramFileUrl,
+    record.inputTelegramFileUrl,
+    media.inputImageUrl,
+    record.inputImageUrl,
+    record.inputPreview,
+    record.inputThumbnail,
+    media.resultImageUrl,
+    record.resultImageUrl,
+    record.imageUrl,
+    botResponse.imageUrl,
+    inputUrl(record)
+  ].find(isPreviewImageUrl) || "";
+}
+
 function sourceLabel(sourceCollection) {
   return SOURCE_LABELS[sourceCollection] || sourceCollection || "Unknown source";
 }
@@ -86,8 +132,9 @@ function deleteTarget(record) {
   };
 }
 
-function ErrorCard({ error, selectMode, selected, onSelect, onDelete }) {
+function ErrorCard({ error, selectMode, selected, onSelect, onDelete, onOpenImage }) {
   const url = inputUrl(error);
+  const previewUrl = errorPreviewImageUrl(error);
 
   return (
     <article className="flex h-full min-w-0 flex-col rounded-lg border border-line bg-panel/92 p-4 text-text/72 backdrop-blur transition hover:border-primary/50">
@@ -146,6 +193,17 @@ function ErrorCard({ error, selectMode, selected, onSelect, onDelete }) {
         </div>
       </dl>
 
+      {previewUrl ? (
+        <button
+          type="button"
+          className="mt-4 block w-full cursor-zoom-in overflow-hidden rounded-lg border border-line bg-ink/24 text-left"
+          onClick={() => onOpenImage({ src: previewUrl, alt: error.message || "Error preview" })}
+          aria-label="Open error image preview"
+        >
+          <img className="block aspect-video w-full object-cover" src={previewUrl} alt="Error preview" />
+        </button>
+      ) : null}
+
       {url ? (
         <details className="mt-3 min-w-0 rounded-md border border-line bg-ink/24 px-3 py-2">
           <summary className="cursor-pointer text-xs font-medium text-text/58 transition hover:text-primary">Full URL</summary>
@@ -174,6 +232,7 @@ export function Errors() {
   const [deleteRequest, setDeleteRequest] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [lightboxImage, setLightboxImage] = useState(null);
 
   const combined = useMemo(() => {
     const nativeErrors = errors.data.map(errorRecord);
@@ -286,6 +345,7 @@ export function Errors() {
               selected={selectedErrorKeys.includes(error.key)}
               onSelect={(checked) => toggleSelected(error.key, checked)}
               onDelete={() => requestDelete([error])}
+              onOpenImage={setLightboxImage}
             />
           ))}
         </div>
@@ -300,6 +360,11 @@ export function Errors() {
         error={deleteError}
         onCancel={() => setDeleteRequest(null)}
         onConfirm={confirmDelete}
+      />
+      <ImageLightbox
+        src={lightboxImage?.src}
+        alt={lightboxImage?.alt}
+        onClose={() => setLightboxImage(null)}
       />
     </div>
   );

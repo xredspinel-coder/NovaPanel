@@ -56,12 +56,22 @@ let logs = readStoredLogs();
 
 function persistLogs() {
   if (typeof window !== "undefined") {
-    window.localStorage.setItem(storageKey, JSON.stringify(logs));
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(logs));
+    } catch (error) {
+      console.warn("Could not persist Developer Console logs.", error);
+    }
   }
 }
 
 function emitChange() {
-  listeners.forEach((listener) => listener());
+  listeners.forEach((listener) => {
+    try {
+      listener();
+    } catch (error) {
+      console.warn("Developer Console listener failed.", error);
+    }
+  });
 }
 
 export function getDeveloperConsoleLogs() {
@@ -80,41 +90,47 @@ export function clearDeveloperConsoleLogs() {
 }
 
 export function addDeveloperConsoleEntry(entry) {
-  const requestTime = entry.requestTime || new Date().toISOString();
-  const responseTime = entry.responseTime || new Date().toISOString();
-  const requestPayload = normalizeJson(entry.requestPayload);
-  const responseJson = normalizeJson(entry.responseJson);
-  const errorJson = normalizeJson(entry.errorJson);
-  const sourceCollection = entry.sourceCollection ?? requestPayload?.sourceCollection ?? requestPayload?.collectionName ?? null;
-  const documentId = entry.documentId ?? requestPayload?.documentId ?? requestPayload?.id ?? null;
-  const deletePath = entry.deletePath ?? requestPayload?.deletePath ?? (sourceCollection && documentId ? `${sourceCollection}/${documentId}` : null);
-  const firebaseErrorCode = entry.firebaseErrorCode ?? errorJson?.firebaseErrorCode ?? errorJson?.code ?? null;
-  const resolvedVideoSource = entry.resolvedVideoSource ?? responseJson?.resolvedVideoSource ?? null;
-  const resolvedImageSource = entry.resolvedImageSource ?? responseJson?.resolvedImageSource ?? null;
-  const normalized = {
-    id: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
-    source: entry.source || "dashboard action",
-    method: entry.method || "GET",
-    url: redactSensitiveString(entry.url || "dashboard://unknown"),
-    status: entry.status ?? null,
-    ok: Boolean(entry.ok),
-    sourceCollection,
-    documentId,
-    deletePath,
-    firebaseErrorCode,
-    resolvedVideoSource,
-    resolvedImageSource,
-    requestTime,
-    responseTime,
-    durationMs: entry.durationMs ?? Math.max(0, new Date(responseTime).getTime() - new Date(requestTime).getTime()),
-    requestPayload,
-    responseJson,
-    errorJson,
-    message: entry.message || null
-  };
+  try {
+    const safeEntry = entry && typeof entry === "object" ? entry : {};
+    const requestTime = safeEntry.requestTime || new Date().toISOString();
+    const responseTime = safeEntry.responseTime || new Date().toISOString();
+    const requestPayload = normalizeJson(safeEntry.requestPayload);
+    const responseJson = normalizeJson(safeEntry.responseJson);
+    const errorJson = normalizeJson(safeEntry.errorJson);
+    const sourceCollection = safeEntry.sourceCollection ?? requestPayload?.sourceCollection ?? requestPayload?.collectionName ?? null;
+    const documentId = safeEntry.documentId ?? requestPayload?.documentId ?? requestPayload?.id ?? null;
+    const deletePath = safeEntry.deletePath ?? requestPayload?.deletePath ?? (sourceCollection && documentId ? `${sourceCollection}/${documentId}` : null);
+    const firebaseErrorCode = safeEntry.firebaseErrorCode ?? errorJson?.firebaseErrorCode ?? errorJson?.code ?? null;
+    const resolvedVideoSource = safeEntry.resolvedVideoSource ?? responseJson?.resolvedVideoSource ?? null;
+    const resolvedImageSource = safeEntry.resolvedImageSource ?? responseJson?.resolvedImageSource ?? null;
+    const normalized = {
+      id: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+      source: safeEntry.source || "dashboard action",
+      method: safeEntry.method || "GET",
+      url: redactSensitiveString(safeEntry.url || "dashboard://unknown"),
+      status: safeEntry.status ?? null,
+      ok: Boolean(safeEntry.ok),
+      sourceCollection,
+      documentId,
+      deletePath,
+      firebaseErrorCode,
+      resolvedVideoSource,
+      resolvedImageSource,
+      requestTime,
+      responseTime,
+      durationMs: safeEntry.durationMs ?? Math.max(0, new Date(responseTime).getTime() - new Date(requestTime).getTime()),
+      requestPayload,
+      responseJson,
+      errorJson,
+      message: safeEntry.message || null
+    };
 
-  logs = [normalized, ...logs].slice(0, maxLogs);
-  persistLogs();
-  emitChange();
-  return normalized;
+    logs = [normalized, ...logs].slice(0, maxLogs);
+    persistLogs();
+    emitChange();
+    return normalized;
+  } catch (error) {
+    console.warn("Could not add Developer Console entry.", error);
+    return null;
+  }
 }

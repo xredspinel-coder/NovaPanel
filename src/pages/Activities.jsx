@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Component, useEffect, useMemo, useRef, useState } from "react";
 import { collection, limit, orderBy, query } from "firebase/firestore";
 import Plyr from "plyr";
 import "plyr/dist/plyr.css";
@@ -8,6 +8,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog.jsx";
 import { EmptyState } from "../components/EmptyState.jsx";
 import { StatusPill } from "../components/StatusPill.jsx";
 import { buttonClass, inputClass } from "../components/Field.jsx";
+import { ImageLightbox } from "../components/ImageLightbox.jsx";
 import { useFirestoreCollection } from "../hooks/useFirestoreCollection.js";
 import { usePersistentState } from "../hooks/usePersistentState.js";
 import { failureLabel, isTechnicalFailure, normalizeActivityStatus } from "../utils/activityTypes.js";
@@ -21,11 +22,12 @@ function formatDate(value) {
 }
 
 function displayUser(activity) {
-  const user = activity.user || {};
+  const record = activity && typeof activity === "object" ? activity : {};
+  const user = record.user && typeof record.user === "object" ? record.user : {};
   return {
     username: user.username || null,
-    displayName: user.displayName || [user.firstName, user.lastName].filter(Boolean).join(" ") || user.username || activity.userId,
-    telegramId: user.telegramId || activity.userId
+    displayName: user.displayName || [user.firstName, user.lastName].filter(Boolean).join(" ") || user.username || record.userId,
+    telegramId: user.telegramId || record.userId
   };
 }
 
@@ -40,10 +42,23 @@ function isTraceMoeUrl(url) {
   return /^https:\/\/api\.trace\.moe\//i.test(url);
 }
 
+function isUsableMediaUrl(url) {
+  if (typeof url !== "string" || !url.trim()) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(url);
+    return ["http:", "https:", "blob:", "data:"].includes(parsed.protocol);
+  } catch {
+    return false;
+  }
+}
+
 function mediaSource(url, kind) {
   const [normalized] = uniqueStrings([url]);
 
-  if (!normalized) {
+  if (!isUsableMediaUrl(normalized)) {
     return null;
   }
 
@@ -56,7 +71,11 @@ function mediaSource(url, kind) {
 function uniqueMediaSources(sources) {
   const seen = new Set();
 
-  return sources.filter(Boolean).filter((source) => {
+  return (Array.isArray(sources) ? sources : []).filter(Boolean).filter((source) => {
+    if (!source || !isUsableMediaUrl(source.url)) {
+      return false;
+    }
+
     if (seen.has(source.url)) {
       return false;
     }
@@ -67,7 +86,7 @@ function uniqueMediaSources(sources) {
 }
 
 function mediaSourceList(entries) {
-  return uniqueMediaSources(entries.map(([url, kind]) => mediaSource(url, kind)));
+  return uniqueMediaSources((Array.isArray(entries) ? entries : []).map(([url, kind]) => mediaSource(url, kind)));
 }
 
 function mediaSourceLabel(source) {
@@ -94,6 +113,116 @@ function resolvedSourceLabel(source, { loading = false, hasTelegramFileId = fals
   return MEDIA_SOURCE_LABELS.unavailable;
 }
 
+function mediaFieldsAvailable(activity = {}) {
+  const media = activity.media && typeof activity.media === "object" ? activity.media : {};
+
+  return {
+    media: Boolean(activity.media && typeof activity.media === "object"),
+    sentVideoFileId: Boolean(media.sentVideoFileId || activity.sentVideoFileId),
+    sentAnimationFileId: Boolean(media.sentAnimationFileId || activity.sentAnimationFileId),
+    sentPhotoFileId: Boolean(media.sentPhotoFileId || activity.sentPhotoFileId),
+    inputTelegramFileId: Boolean(media.inputTelegramFileId || activity.inputTelegramFileId || activity.inputFileId),
+    inputTelegramFileUrl: Boolean(media.inputTelegramFileUrl || activity.inputTelegramFileUrl),
+    resultVideoUrl: Boolean(media.resultVideoUrl || activity.resultVideoUrl || activity.videoUrl || activity.botResponse?.videoUrl),
+    resultImageUrl: Boolean(media.resultImageUrl || activity.resultImageUrl || activity.imageUrl || activity.botResponse?.imageUrl),
+    videoUrl: Boolean(activity.videoUrl),
+    imageUrl: Boolean(activity.imageUrl),
+    inputUrl: Boolean(activity.inputUrl)
+  };
+}
+
+function safeAddDeveloperConsoleEntry(entry) {
+  try {
+    addDeveloperConsoleEntry(entry);
+  } catch (error) {
+    console.warn("Developer Console logging failed.", error);
+  }
+}
+
+function safeStringify(value) {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch (error) {
+    return JSON.stringify({
+      error: "Activity JSON could not be serialized.",
+      message: error.message
+    }, null, 2);
+  }
+}
+
+function ActivityPreviewFallback({ activity, error, onClose }) {
+  return (
+    <div className="fixed inset-0 z-40 bg-black/45 p-4 backdrop-blur-sm" onClick={onClose}>
+      <section className="ml-auto flex h-full max-w-xl flex-col overflow-hidden rounded-lg border border-line bg-panel shadow-2xl" onClick={(event) => event.stopPropagation()}>
+        <header className="flex items-center justify-between border-b border-line px-5 py-4">
+          <div>
+            <p className="text-xs uppercase tracking-[0.2em] text-primary">Activity details</p>
+            <h2 className="mt-1 text-xl font-semibold text-text">Unable to render this activity preview.</h2>
+          </div>
+          <button className="grid h-9 w-9 place-items-center rounded-md border border-line text-text/62 transition hover:text-primary" type="button" onClick={onClose} aria-label="Close details">
+            <X className="h-4 w-4" />
+          </button>
+        </header>
+        <div className="space-y-4 overflow-y-auto p-5">
+          <p className="rounded-md border border-red-300/18 bg-red-400/10 px-3 py-2 text-sm text-red-100">
+            {error?.message || "The activity contains media data that could not be rendered safely."}
+          </p>
+          <details className="rounded-md border border-line bg-ink/28">
+            <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-text/72">Developer data</summary>
+            <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-all px-3 pb-3 text-xs text-text/62">{safeStringify(activity)}</pre>
+          </details>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+class ActivityPreviewBoundary extends Component {
+  state = {
+    error: null
+  };
+
+  static getDerivedStateFromError(error) {
+    return {
+      error
+    };
+  }
+
+  componentDidCatch(error) {
+    safeAddDeveloperConsoleEntry({
+      source: "activity preview",
+      method: "RENDER",
+      url: `activity://${this.props.activity?.id || "unknown"}`,
+      status: "preview-render-failed",
+      ok: false,
+      requestPayload: {
+        activityId: this.props.activity?.id || null,
+        mediaFieldsAvailable: mediaFieldsAvailable(this.props.activity || {}),
+        attemptedSource: "activity preview render"
+      },
+      errorJson: {
+        message: error.message
+      }
+    });
+  }
+
+  componentDidUpdate(previousProps) {
+    if (previousProps.resetKey !== this.props.resetKey && this.state.error) {
+      this.setState({
+        error: null
+      });
+    }
+  }
+
+  render() {
+    if (this.state.error) {
+      return <ActivityPreviewFallback activity={this.props.activity} error={this.state.error} onClose={this.props.onClose} />;
+    }
+
+    return this.props.children;
+  }
+}
+
 function filenameSafePart(value, fallback) {
   const cleaned = String(value || fallback || "")
     .replace(/[<>:"/\\|?*\u0000-\u001F]/g, "")
@@ -116,54 +245,58 @@ function videoDownloadFilename({ title, time, id }) {
 }
 
 function collectMedia(activity = {}) {
-  const media = activity.media && typeof activity.media === "object" ? activity.media : {};
+  const record = activity && typeof activity === "object" ? activity : {};
+  const media = record.media && typeof record.media === "object" ? record.media : {};
+  const botResponse = record.botResponse && typeof record.botResponse === "object" ? record.botResponse : {};
 
   return {
     inputImageFileIds: uniqueStrings([
       media.inputTelegramFileId,
-      activity.inputTelegramFileId,
-      activity.inputFileId
+      record.inputTelegramFileId,
+      record.inputFileId
     ]),
     sentPhotoFileIds: uniqueStrings([
       media.sentPhotoFileId,
-      activity.sentPhotoFileId
+      record.sentPhotoFileId
     ]),
     videoFileIds: uniqueStrings([
       media.sentVideoFileId,
-      activity.sentVideoFileId,
+      record.sentVideoFileId,
       media.sentAnimationFileId,
-      activity.sentAnimationFileId
+      record.sentAnimationFileId
     ]),
     telegramVideoSources: mediaSourceList([
       [media.botVideoUrl, "telegram"],
-      [activity.botVideoUrl, "telegram"]
+      [record.botVideoUrl, "telegram"]
     ]),
     inputImageFallbackSources: mediaSourceList([
       [media.inputTelegramFileUrl, "input"],
-      [activity.inputTelegramFileUrl, "input"],
+      [record.inputTelegramFileUrl, "input"],
       [media.inputImageUrl, "input"],
-      [activity.inputImageUrl, "input"],
-      [activity.inputPreview, "input"],
-      [activity.inputThumbnail, "input"],
-      [activity.inputUrl, "input"]
+      [record.inputImageUrl, "input"],
+      [record.inputPreview, "input"],
+      [record.inputThumbnail, "input"],
+      [record.inputUrl, "input"]
     ]),
     resultImageFallbackSources: mediaSourceList([
       [media.resultImageUrl, "trace"],
-      [activity.resultImageUrl, "trace"],
-      [activity.imageUrl, "trace"],
-      [activity.botResponse?.imageUrl, "trace"]
+      [record.resultImageUrl, "trace"],
+      [record.imageUrl, "trace"],
+      [botResponse.imageUrl, "trace"]
     ]),
     resultVideoFallbackSources: mediaSourceList([
       [media.resultVideoUrl, "trace"],
-      [activity.resultVideoUrl, "trace"],
-      [activity.videoUrl, "trace"],
-      [activity.botResponse?.videoUrl, "trace"]
+      [record.resultVideoUrl, "trace"],
+      [record.videoUrl, "trace"],
+      [botResponse.videoUrl, "trace"]
     ])
   };
 }
 
-function useResolvedTelegramSources(fileIds, kind = "telegram") {
-  const key = `${kind}:${fileIds.join("|")}`;
+function useResolvedTelegramSources(fileIds, kind = "telegram", context = {}) {
+  const safeFileIds = uniqueStrings(Array.isArray(fileIds) ? fileIds : []);
+  const contextKey = `${context.activityId || "unknown"}:${context.attemptedSource || kind}`;
+  const key = `${contextKey}:${kind}:${safeFileIds.join("|")}`;
   const [state, setState] = useState({
     sources: [],
     loading: false,
@@ -173,7 +306,7 @@ function useResolvedTelegramSources(fileIds, kind = "telegram") {
   useEffect(() => {
     let active = true;
 
-    if (!fileIds.length || !canResolveTelegramFiles()) {
+    if (!safeFileIds.length || !canResolveTelegramFiles()) {
       setState({
         sources: [],
         loading: false,
@@ -190,9 +323,29 @@ function useResolvedTelegramSources(fileIds, kind = "telegram") {
       settled: false
     });
 
-    Promise.allSettled(fileIds.map((fileId) => resolveTelegramFileUrl(fileId))).then((results) => {
+    Promise.allSettled(safeFileIds.map((fileId) => resolveTelegramFileUrl(fileId))).then((results) => {
       if (!active) {
         return;
+      }
+
+      const failures = results.filter((result) => result.status === "rejected");
+
+      if (failures.length && context.logFailures) {
+        safeAddDeveloperConsoleEntry({
+          source: "activity media resolver",
+          method: "MEDIA",
+          url: `activity://${context.activityId || "unknown"}`,
+          status: "media-resolution-failed",
+          ok: false,
+          requestPayload: {
+            activityId: context.activityId || null,
+            mediaFieldsAvailable: context.mediaFieldsAvailable || {},
+            attemptedSource: context.attemptedSource || kind
+          },
+          errorJson: {
+            message: failures.map((result) => result.reason?.message || String(result.reason)).join("; ")
+          }
+        });
       }
 
       setState({
@@ -212,11 +365,25 @@ function useResolvedTelegramSources(fileIds, kind = "telegram") {
   return state;
 }
 
-function useActivityMedia(activity) {
+function useActivityMedia(activity, { logFailures = false } = {}) {
   const media = useMemo(() => collectMedia(activity), [activity]);
-  const resolvedInputImages = useResolvedTelegramSources(media.inputImageFileIds, "input");
-  const resolvedSentPhotos = useResolvedTelegramSources(media.sentPhotoFileIds, "telegram");
-  const resolvedVideos = useResolvedTelegramSources(media.videoFileIds, "telegram");
+  const debugContext = useMemo(() => ({
+    activityId: activity?.id || null,
+    mediaFieldsAvailable: mediaFieldsAvailable(activity || {}),
+    logFailures
+  }), [activity, logFailures]);
+  const resolvedInputImages = useResolvedTelegramSources(media.inputImageFileIds, "input", {
+    ...debugContext,
+    attemptedSource: "input Telegram file ID"
+  });
+  const resolvedSentPhotos = useResolvedTelegramSources(media.sentPhotoFileIds, "telegram", {
+    ...debugContext,
+    attemptedSource: "sent Telegram photo file ID"
+  });
+  const resolvedVideos = useResolvedTelegramSources(media.videoFileIds, "telegram", {
+    ...debugContext,
+    attemptedSource: "sent Telegram video file ID"
+  });
   const canResolveTelegram = canResolveTelegramFiles();
   const canUseVideoFallback =
     !media.videoFileIds.length ||
@@ -319,32 +486,50 @@ function MediaFallback({ reason = "preview_unavailable", loading = false }) {
   );
 }
 
-function ProgressiveImage({ sources, alt, loading = false, reason, className = "aspect-video w-full rounded-lg border border-line object-cover" }) {
-  const sourceKey = sources.map((source) => source.url).join("|");
+function ProgressiveImage({ sources, alt, loading = false, reason, className = "aspect-video w-full rounded-lg border border-line object-cover", onOpenImage }) {
+  const safeSources = uniqueMediaSources(sources);
+  const sourceKey = safeSources.map((source) => source.url).join("|");
   const [index, setIndex] = useState(0);
 
   useEffect(() => {
     setIndex(0);
   }, [sourceKey]);
 
-  const src = sources[index]?.url;
+  const src = safeSources[index]?.url;
 
   if (!src) {
     return <MediaFallback loading={loading} reason={reason} />;
   }
 
-  return (
+  const image = (
     <img
-      className={className}
+      className={`${className} block ${onOpenImage ? "cursor-zoom-in" : ""}`}
       src={src}
       alt={alt}
       onError={() => setIndex((current) => current + 1)}
     />
   );
+
+  if (!onOpenImage) {
+    return image;
+  }
+
+  return (
+    <button
+      type="button"
+      className="block w-full cursor-zoom-in overflow-hidden text-left"
+      onClick={() => onOpenImage({ src, alt })}
+      aria-label={`Open ${alt || "image preview"}`}
+    >
+      {image}
+    </button>
+  );
 }
 
-function MediaImage({ label, sources, alt, loading, reason, showFallback = false }) {
-  if (!sources.length && !loading && !showFallback) {
+function MediaImage({ label, sources, alt, loading, reason, showFallback = false, onOpenImage }) {
+  const safeSources = uniqueMediaSources(sources);
+
+  if (!safeSources.length && !loading && !showFallback) {
     return null;
   }
 
@@ -352,16 +537,18 @@ function MediaImage({ label, sources, alt, loading, reason, showFallback = false
     <div>
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <p className="text-xs uppercase tracking-[0.16em] text-text/38">{label}</p>
-        <MediaSourceBadge source={sources[0]} />
+        <MediaSourceBadge source={safeSources[0]} />
       </div>
-      <ProgressiveImage sources={sources} alt={alt} loading={loading} reason={reason} />
+      <ProgressiveImage sources={safeSources} alt={alt} loading={loading} reason={reason} onOpenImage={onOpenImage} />
     </div>
   );
 }
 
 function VideoPreview({ sources, posterSources = [], loading, activityId, title, time }) {
-  const sourceKey = sources.map((source) => source.url).join("|");
-  const posterKey = posterSources.map((source) => source.url).join("|");
+  const safeSources = uniqueMediaSources(sources);
+  const safePosterSources = uniqueMediaSources(posterSources);
+  const sourceKey = safeSources.map((source) => source.url).join("|");
+  const posterKey = safePosterSources.map((source) => source.url).join("|");
   const videoRef = useRef(null);
   const playerRef = useRef(null);
   const [sourceIndex, setSourceIndex] = useState(0);
@@ -370,9 +557,9 @@ function VideoPreview({ sources, posterSources = [], loading, activityId, title,
   const [ready, setReady] = useState(false);
   const [downloadStatus, setDownloadStatus] = useState("");
   const [downloading, setDownloading] = useState(false);
-  const source = sources[sourceIndex];
+  const source = safeSources[sourceIndex];
   const src = source?.url;
-  const poster = posterSources[posterIndex]?.url || "";
+  const poster = safePosterSources[posterIndex]?.url || "";
 
   useEffect(() => {
     setSourceIndex(0);
@@ -389,26 +576,54 @@ function VideoPreview({ sources, posterSources = [], loading, activityId, title,
       return undefined;
     }
 
+    let active = true;
     setReady(false);
     const node = videoRef.current;
-    const player = new Plyr(node, {
-      theme: "dark",
-      controls: ["play-large", "play", "progress", "current-time", "mute", "volume", "settings", "fullscreen"],
-      settings: ["quality", "speed"],
-      quality: {
-        default: 720,
-        options: [1080, 720, 480, 360]
+    let player = null;
+
+    try {
+      player = new Plyr(node, {
+        theme: "dark",
+        controls: ["play-large", "play", "progress", "current-time", "mute", "volume", "settings", "fullscreen"],
+        settings: ["quality", "speed"],
+        quality: {
+          default: 720,
+          options: [1080, 720, 480, 360]
+        }
+      });
+
+      playerRef.current = player;
+    } catch (error) {
+      safeAddDeveloperConsoleEntry({
+        source: "activity video player",
+        method: "MEDIA",
+        url: `activity://${activityId || "unknown"}`,
+        status: "video-player-failed",
+        ok: false,
+        requestPayload: {
+          activityId: activityId || null,
+          attemptedSource: mediaSourceLabel(source)
+        },
+        errorJson: {
+          message: error.message
+        }
+      });
+      setVideoFailed(true);
+      return undefined;
+    }
+
+    const handleReady = () => {
+      if (active) {
+        setReady(true);
       }
-    });
-
-    playerRef.current = player;
-
-    const handleReady = () => setReady(true);
+    };
     const handleError = () => {
-      if (sourceIndex < sources.length - 1) {
-        setSourceIndex((current) => current + 1);
-      } else {
-        setVideoFailed(true);
+      if (active) {
+        if (sourceIndex < safeSources.length - 1) {
+          setSourceIndex((current) => current + 1);
+        } else {
+          setVideoFailed(true);
+        }
       }
     };
 
@@ -417,11 +632,17 @@ function VideoPreview({ sources, posterSources = [], loading, activityId, title,
     node.addEventListener("error", handleError, true);
 
     return () => {
+      active = false;
       node.removeEventListener("error", handleError, true);
-      player.destroy();
-      playerRef.current = null;
+      try {
+        player?.destroy();
+      } catch (error) {
+        console.warn("Video player cleanup failed.", error);
+      } finally {
+        playerRef.current = null;
+      }
     };
-  }, [src, sourceIndex, sources.length]);
+  }, [src, sourceIndex, safeSources.length, activityId, source?.kind]);
 
   if (!src && !loading) {
     return null;
@@ -502,15 +723,15 @@ function VideoPreview({ sources, posterSources = [], loading, activityId, title,
   );
 }
 
-function ActivityDetails({ activity, onClose }) {
-  const media = useActivityMedia(activity || {});
+function ActivityDetails({ activity, onClose, onOpenImage }) {
+  const media = useActivityMedia(activity || {}, { logFailures: true });
 
   useEffect(() => {
     if (!activity) {
       return;
     }
 
-    addDeveloperConsoleEntry({
+    safeAddDeveloperConsoleEntry({
       source: "activity media resolver",
       method: "MEDIA",
       url: `activity://${activity.id}`,
@@ -545,7 +766,7 @@ function ActivityDetails({ activity, onClose }) {
   }
 
   const user = displayUser(activity);
-  const botResponse = activity.botResponse || {};
+  const botResponse = activity.botResponse && typeof activity.botResponse === "object" ? activity.botResponse : {};
   const similarity = botResponse.similarity ?? activity.similarity;
   const reason = failureLabel(activity);
   const hasVideo = media.videoSources.length > 0 || media.videoLoading;
@@ -566,7 +787,7 @@ function ActivityDetails({ activity, onClose }) {
         </header>
 
         <div className="space-y-6 overflow-y-auto p-5">
-          <MediaImage label="User input preview" sources={media.inputImageSources} alt="User input preview" loading={media.imageLoading} reason={reason} showFallback />
+          <MediaImage label="User input preview" sources={media.inputImageSources} alt="User input preview" loading={media.imageLoading} reason={reason} showFallback onOpenImage={onOpenImage} />
           {hasVideo ? (
             <VideoPreview
               sources={media.videoSources}
@@ -577,7 +798,7 @@ function ActivityDetails({ activity, onClose }) {
               time={activity.formattedTime || botResponse.time}
             />
           ) : hasImage ? (
-            <MediaImage label="Image preview" sources={media.imageSources} alt="Media preview" loading={media.imageLoading} reason={reason} showFallback />
+            <MediaImage label="Image preview" sources={media.imageSources} alt="Media preview" loading={media.imageLoading} reason={reason} showFallback onOpenImage={onOpenImage} />
           ) : !hasInputImage ? (
             <MediaFallback reason={reason} />
           ) : null}
@@ -646,30 +867,34 @@ function ViewToggle({ viewMode, setViewMode }) {
   );
 }
 
-function ActivityCard({ activity, selectMode, selected, onSelect, onOpen, onDelete }) {
-  const media = useActivityMedia(activity);
+function ActivityCard({ activity, selectMode, selected, onSelect, onOpen, onDelete, onOpenImage }) {
+  const media = collectMedia(activity);
+  const previewImageSources = uniqueMediaSources([
+    ...media.inputImageFallbackSources,
+    ...media.resultImageFallbackSources
+  ]);
+  const hasVideo = media.videoFileIds.length || media.telegramVideoSources.length || media.resultVideoFallbackSources.length;
   const user = displayUser(activity);
   const reason = failureLabel(activity);
 
   return (
     <article className="overflow-hidden rounded-lg border border-line bg-panel text-left transition hover:border-primary">
-      <button type="button" onClick={onOpen} className="block w-full text-left">
-        <div className="relative">
-          <ProgressiveImage
-            sources={media.previewImageSources}
-            alt="Activity preview"
-            loading={media.imageLoading}
-            reason={reason}
-            className="aspect-video w-full object-cover"
-          />
-          {media.videoSources.length || media.videoLoading ? (
-            <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-md border border-primary/30 bg-ink/80 px-2 py-1 text-xs font-medium text-primary backdrop-blur">
-              <PlayCircle className="h-3.5 w-3.5 fill-current" />
-              Video
-            </span>
-          ) : null}
-        </div>
-      </button>
+      <div className="relative">
+        <ProgressiveImage
+          sources={previewImageSources}
+          alt="Activity preview"
+          loading={false}
+          reason={reason}
+          className="aspect-video w-full object-cover"
+          onOpenImage={onOpenImage}
+        />
+        {hasVideo ? (
+          <span className="pointer-events-none absolute right-3 top-3 inline-flex items-center gap-1 rounded-md border border-primary/30 bg-ink/80 px-2 py-1 text-xs font-medium text-primary backdrop-blur">
+            <PlayCircle className="h-3.5 w-3.5 fill-current" />
+            Video
+          </span>
+        ) : null}
+      </div>
 
       <div className="space-y-3 p-4">
         <div className="flex items-center justify-between gap-3">
@@ -711,6 +936,7 @@ export function Activities() {
   const [deleteRequest, setDeleteRequest] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [lightboxImage, setLightboxImage] = useState(null);
 
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -833,6 +1059,7 @@ export function Activities() {
               onSelect={(checked) => toggleSelected(activity.id, checked)}
               onOpen={() => setSelectedActivity(activity)}
               onDelete={() => requestDelete([activity.id])}
+              onOpenImage={setLightboxImage}
             />
           ))}
         </div>
@@ -908,7 +1135,20 @@ export function Activities() {
         </div>
       )}
 
-      <ActivityDetails activity={selectedActivity} onClose={() => setSelectedActivity(null)} />
+      {selectedActivity ? (
+        <ActivityPreviewBoundary
+          activity={selectedActivity}
+          resetKey={selectedActivity.id || JSON.stringify(mediaFieldsAvailable(selectedActivity))}
+          onClose={() => setSelectedActivity(null)}
+        >
+          <ActivityDetails activity={selectedActivity} onClose={() => setSelectedActivity(null)} onOpenImage={setLightboxImage} />
+        </ActivityPreviewBoundary>
+      ) : null}
+      <ImageLightbox
+        src={lightboxImage?.src}
+        alt={lightboxImage?.alt}
+        onClose={() => setLightboxImage(null)}
+      />
       <ConfirmDialog
         open={Boolean(deleteRequest)}
         title={deleteRequest?.title}
