@@ -58,6 +58,7 @@ function JsonPanel({ title, value }) {
 function LogCard({ log }) {
   const ok = Boolean(log.ok);
   const hasDeleteMetadata = log.sourceCollection || log.documentId || log.deletePath || log.firebaseErrorCode;
+  const hasMediaMetadata = log.resolvedVideoSource || log.resolvedImageSource;
 
   return (
     <details className="group rounded-lg border border-line bg-panel/92 shadow-[0_18px_70px_rgb(0_0_0/0.10)]">
@@ -122,6 +123,19 @@ function LogCard({ log }) {
           </div>
         ) : null}
 
+        {hasMediaMetadata ? (
+          <div className="grid gap-3 rounded-md border border-line bg-ink/24 px-3 py-3 font-mono text-xs text-text/64 md:grid-cols-2">
+            <div>
+              <p className="text-text/38">Resolved video source</p>
+              <p>{log.resolvedVideoSource || "-"}</p>
+            </div>
+            <div>
+              <p className="text-text/38">Resolved image source</p>
+              <p>{log.resolvedImageSource || "-"}</p>
+            </div>
+          </div>
+        ) : null}
+
         {log.message ? <p className="rounded-md border border-line bg-ink/28 px-3 py-2 text-sm text-text/70">{log.message}</p> : null}
 
         <div className="grid gap-4 lg:grid-cols-2">
@@ -153,7 +167,19 @@ export function DeveloperConsole() {
       const matchesSource = source === "all" || log.source === source;
       const matchesSearch =
         !needle ||
-        [log.url, log.source, log.method, log.status, log.message, log.sourceCollection, log.documentId, log.deletePath, log.firebaseErrorCode]
+        [
+          log.url,
+          log.source,
+          log.method,
+          log.status,
+          log.message,
+          log.sourceCollection,
+          log.documentId,
+          log.deletePath,
+          log.firebaseErrorCode,
+          log.resolvedVideoSource,
+          log.resolvedImageSource
+        ]
           .filter((value) => value !== null && value !== undefined)
           .some((value) => String(value).toLowerCase().includes(needle));
 

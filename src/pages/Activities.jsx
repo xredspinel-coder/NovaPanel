@@ -13,6 +13,7 @@ import { usePersistentState } from "../hooks/usePersistentState.js";
 import { failureLabel, isTechnicalFailure, normalizeActivityStatus } from "../utils/activityTypes.js";
 import { downloadFile } from "../utils/downloadFile.js";
 import { deleteFirestoreDocument } from "../utils/firestoreDelete.js";
+import { addDeveloperConsoleEntry } from "../utils/developerConsole.js";
 import { canResolveTelegramFiles, resolveTelegramFileUrl, uniqueStrings } from "../utils/mediaResolver.js";
 
 function formatDate(value) {
@@ -71,6 +72,26 @@ function mediaSourceList(entries) {
 
 function mediaSourceLabel(source) {
   return MEDIA_SOURCE_LABELS[source?.kind] || MEDIA_SOURCE_LABELS.unavailable;
+}
+
+function resolvedSourceLabel(source, { loading = false, hasTelegramFileId = false } = {}) {
+  if (loading && hasTelegramFileId) {
+    return "Telegram file ID resolving";
+  }
+
+  if (source?.kind === "telegram") {
+    return "Telegram file ID";
+  }
+
+  if (source?.kind === "trace") {
+    return "trace.moe fallback";
+  }
+
+  if (source?.kind === "input") {
+    return "input image";
+  }
+
+  return MEDIA_SOURCE_LABELS.unavailable;
 }
 
 function filenameSafePart(value, fallback) {
@@ -145,7 +166,8 @@ function useResolvedTelegramSources(fileIds, kind = "telegram") {
   const key = `${kind}:${fileIds.join("|")}`;
   const [state, setState] = useState({
     sources: [],
-    loading: false
+    loading: false,
+    settled: false
   });
 
   useEffect(() => {
@@ -154,7 +176,8 @@ function useResolvedTelegramSources(fileIds, kind = "telegram") {
     if (!fileIds.length || !canResolveTelegramFiles()) {
       setState({
         sources: [],
-        loading: false
+        loading: false,
+        settled: false
       });
       return () => {
         active = false;
@@ -163,7 +186,8 @@ function useResolvedTelegramSources(fileIds, kind = "telegram") {
 
     setState({
       sources: [],
-      loading: true
+      loading: true,
+      settled: false
     });
 
     Promise.allSettled(fileIds.map((fileId) => resolveTelegramFileUrl(fileId))).then((results) => {
@@ -175,7 +199,8 @@ function useResolvedTelegramSources(fileIds, kind = "telegram") {
         sources: mediaSourceList(
           results.map((result) => [result.status === "fulfilled" ? result.value : null, kind])
         ),
-        loading: false
+        loading: false,
+        settled: true
       });
     });
 
@@ -192,32 +217,57 @@ function useActivityMedia(activity) {
   const resolvedInputImages = useResolvedTelegramSources(media.inputImageFileIds, "input");
   const resolvedSentPhotos = useResolvedTelegramSources(media.sentPhotoFileIds, "telegram");
   const resolvedVideos = useResolvedTelegramSources(media.videoFileIds, "telegram");
+  const canResolveTelegram = canResolveTelegramFiles();
+  const canUseVideoFallback =
+    !media.videoFileIds.length ||
+    !canResolveTelegram ||
+    (resolvedVideos.settled && resolvedVideos.sources.length === 0);
+  const canUseSentPhotoFallback =
+    !media.sentPhotoFileIds.length ||
+    !canResolveTelegram ||
+    (resolvedSentPhotos.settled && resolvedSentPhotos.sources.length === 0);
+  const canUseInputImageFallback =
+    !media.inputImageFileIds.length ||
+    !canResolveTelegram ||
+    (resolvedInputImages.settled && resolvedInputImages.sources.length === 0);
 
-  return {
-    inputImageSources: uniqueMediaSources([
+  const inputImageSources = uniqueMediaSources([
       ...resolvedInputImages.sources,
-      ...media.inputImageFallbackSources
-    ]),
-    imageSources: uniqueMediaSources([
+      ...(canUseInputImageFallback ? media.inputImageFallbackSources : [])
+    ]);
+  const imageSources = uniqueMediaSources([
       ...resolvedSentPhotos.sources,
       ...resolvedInputImages.sources,
-      ...media.inputImageFallbackSources,
+      ...(canUseSentPhotoFallback && canUseInputImageFallback ? media.inputImageFallbackSources : []),
       ...media.resultImageFallbackSources
-    ]),
-    posterSources: media.resultImageFallbackSources,
-    previewImageSources: uniqueMediaSources([
-      ...resolvedSentPhotos.sources,
-      ...resolvedInputImages.sources,
-      ...media.inputImageFallbackSources,
-      ...media.resultImageFallbackSources
-    ]),
-    videoSources: uniqueMediaSources([
+    ]);
+  const videoSources = uniqueMediaSources([
       ...resolvedVideos.sources,
       ...media.telegramVideoSources,
-      ...media.resultVideoFallbackSources
+      ...(canUseVideoFallback ? media.resultVideoFallbackSources : [])
+    ]);
+
+  return {
+    inputImageSources,
+    imageSources,
+    posterSources: media.resultImageFallbackSources,
+    previewImageSources: uniqueMediaSources([
+      ...imageSources,
+      ...media.resultImageFallbackSources
     ]),
+    videoSources,
     imageLoading: resolvedInputImages.loading || resolvedSentPhotos.loading,
-    videoLoading: resolvedVideos.loading
+    videoLoading: resolvedVideos.loading,
+    hasTelegramVideoFileId: media.videoFileIds.length > 0,
+    hasTelegramImageFileId: media.sentPhotoFileIds.length > 0 || media.inputImageFileIds.length > 0,
+    resolvedVideoSource: resolvedSourceLabel(videoSources[0], {
+      loading: resolvedVideos.loading,
+      hasTelegramFileId: media.videoFileIds.length > 0
+    }),
+    resolvedImageSource: resolvedSourceLabel(imageSources[0], {
+      loading: resolvedInputImages.loading || resolvedSentPhotos.loading,
+      hasTelegramFileId: media.sentPhotoFileIds.length > 0 || media.inputImageFileIds.length > 0
+    })
   };
 }
 
@@ -454,6 +504,41 @@ function VideoPreview({ sources, posterSources = [], loading, activityId, title,
 
 function ActivityDetails({ activity, onClose }) {
   const media = useActivityMedia(activity || {});
+
+  useEffect(() => {
+    if (!activity) {
+      return;
+    }
+
+    addDeveloperConsoleEntry({
+      source: "activity media resolver",
+      method: "MEDIA",
+      url: `activity://${activity.id}`,
+      status: "resolved",
+      ok: true,
+      resolvedVideoSource: media.resolvedVideoSource,
+      resolvedImageSource: media.resolvedImageSource,
+      requestPayload: {
+        activityId: activity.id,
+        hasTelegramVideoFileId: media.hasTelegramVideoFileId,
+        hasTelegramImageFileId: media.hasTelegramImageFileId
+      },
+      responseJson: {
+        resolvedVideoSource: media.resolvedVideoSource,
+        resolvedImageSource: media.resolvedImageSource,
+        videoSourceKind: media.videoSources[0]?.kind || null,
+        imageSourceKind: media.imageSources[0]?.kind || null
+      }
+    });
+  }, [
+    activity?.id,
+    media.resolvedVideoSource,
+    media.resolvedImageSource,
+    media.hasTelegramVideoFileId,
+    media.hasTelegramImageFileId,
+    media.videoSources[0]?.kind,
+    media.imageSources[0]?.kind
+  ]);
 
   if (!activity) {
     return null;

@@ -89,6 +89,8 @@ export function addDeveloperConsoleEntry(entry) {
   const documentId = entry.documentId ?? requestPayload?.documentId ?? requestPayload?.id ?? null;
   const deletePath = entry.deletePath ?? requestPayload?.deletePath ?? (sourceCollection && documentId ? `${sourceCollection}/${documentId}` : null);
   const firebaseErrorCode = entry.firebaseErrorCode ?? errorJson?.firebaseErrorCode ?? errorJson?.code ?? null;
+  const resolvedVideoSource = entry.resolvedVideoSource ?? responseJson?.resolvedVideoSource ?? null;
+  const resolvedImageSource = entry.resolvedImageSource ?? responseJson?.resolvedImageSource ?? null;
   const normalized = {
     id: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
     source: entry.source || "dashboard action",
@@ -100,6 +102,8 @@ export function addDeveloperConsoleEntry(entry) {
     documentId,
     deletePath,
     firebaseErrorCode,
+    resolvedVideoSource,
+    resolvedImageSource,
     requestTime,
     responseTime,
     durationMs: entry.durationMs ?? Math.max(0, new Date(responseTime).getTime() - new Date(requestTime).getTime()),
