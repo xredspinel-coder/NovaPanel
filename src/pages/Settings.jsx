@@ -11,7 +11,11 @@ const defaultSettings = {
   enableReddit: true,
   enableFacebook: false,
   enableVideoPreview: true,
-  maintenanceMode: false
+  maintenanceMode: false,
+  trendingWindowHours: 24,
+  allowTrustedBypass: true,
+  enableRandomAnime: true,
+  enableTopAnime: true
 };
 
 export function Settings() {
@@ -61,6 +65,10 @@ export function Settings() {
           enableFacebook: Boolean(settings.enableFacebook),
           enableVideoPreview: Boolean(settings.enableVideoPreview),
           maintenanceMode: Boolean(settings.maintenanceMode),
+          trendingWindowHours: Number(settings.trendingWindowHours),
+          allowTrustedBypass: Boolean(settings.allowTrustedBypass),
+          enableRandomAnime: Boolean(settings.enableRandomAnime),
+          enableTopAnime: Boolean(settings.enableTopAnime),
           updatedAt: serverTimestamp()
         },
         { merge: true }
@@ -101,6 +109,18 @@ export function Settings() {
             />
           </Field>
         </div>
+        <div className="rounded-lg border border-line bg-panel p-4 backdrop-blur">
+          <Field label="Trending window hours">
+            <input
+              className={inputClass}
+              type="number"
+              min="1"
+              max="168"
+              value={settings.trendingWindowHours}
+              onChange={(event) => patch("trendingWindowHours", event.target.value)}
+            />
+          </Field>
+        </div>
       </section>
 
       <section className="rounded-lg border border-line bg-panel p-4 backdrop-blur">
@@ -110,7 +130,10 @@ export function Settings() {
             ["enableReddit", "Reddit links"],
             ["enableFacebook", "Facebook links"],
             ["enableVideoPreview", "Video preview"],
-            ["maintenanceMode", "Maintenance mode"]
+            ["maintenanceMode", "Maintenance mode"],
+            ["allowTrustedBypass", "Trusted bypass"],
+            ["enableRandomAnime", "Random anime"],
+            ["enableTopAnime", "Top anime"]
           ].map(([key, label]) => (
             <label key={key} className="flex items-center justify-between gap-3 rounded-md border border-line px-3 py-3 text-sm text-text/76">
               <span>{label}</span>

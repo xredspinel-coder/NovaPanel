@@ -12,6 +12,7 @@ import { Home } from "./pages/Home.jsx";
 import { Users } from "./pages/Users.jsx";
 import { Activities } from "./pages/Activities.jsx";
 import { Analytics } from "./pages/Analytics.jsx";
+import { WrongMatchReports } from "./pages/WrongMatchReports.jsx";
 import { Settings } from "./pages/Settings.jsx";
 import { Appearance } from "./pages/Appearance.jsx";
 import { Errors } from "./pages/Errors.jsx";
@@ -43,6 +44,12 @@ const dashboardRoutes = [
     title: "Analytics",
     description: "Review usage trends and match performance.",
     component: Analytics
+  },
+  {
+    path: "/wrong-matches",
+    title: "Wrong Matches",
+    description: "Review user-submitted wrong match reports.",
+    component: WrongMatchReports
   },
   {
     path: "/system",

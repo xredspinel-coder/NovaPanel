@@ -1,5 +1,6 @@
-import { collection, limit, orderBy, query } from "firebase/firestore";
-import { Activity, AlertTriangle, CheckCircle2, Users } from "lucide-react";
+import { useEffect, useState } from "react";
+import { collection, doc, limit, onSnapshot, orderBy, query } from "firebase/firestore";
+import { Activity, AlertTriangle, CheckCircle2, TrendingUp, Users } from "lucide-react";
 import {
   Area,
   AreaChart,
@@ -65,6 +66,29 @@ function ChartCard({ title, description, children, chartClassName = "" }) {
   );
 }
 
+function activityLabel(activity) {
+  return activity.animeTitle || activity.botResponse?.title || "Unknown";
+}
+
+function rankAnime(activities) {
+  const counts = new Map();
+
+  activities.forEach((activity) => {
+    const name = activityLabel(activity);
+
+    if (!name || name === "Unknown") {
+      return;
+    }
+
+    counts.set(name, (counts.get(name) || 0) + 1);
+  });
+
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 5)
+    .map(([name, count]) => ({ name, count }));
+}
+
 function HomeSkeleton() {
   return (
     <div className="space-y-5">
@@ -89,6 +113,14 @@ export function Home() {
   const users = useFirestoreCollection(query(collection(db, "users"), limit(300)), []);
   const activities = useFirestoreCollection(query(collection(db, "activities"), orderBy("createdAt", "desc"), limit(300)), []);
   const errors = useFirestoreCollection(query(collection(db, "errors"), orderBy("createdAt", "desc"), limit(50)), []);
+  const [trendingWindowHours, setTrendingWindowHours] = useState(24);
+
+  useEffect(() => {
+    return onSnapshot(doc(db, "settings", "global"), (snapshot) => {
+      const hours = Number(snapshot.exists() ? snapshot.data().trendingWindowHours : 24);
+      setTrendingWindowHours(Number.isFinite(hours) && hours > 0 ? hours : 24);
+    });
+  }, []);
 
   const chartData = (() => {
     const today = new Date();
@@ -158,6 +190,10 @@ export function Home() {
     ? statusChartData
     : [{ name: "No activity", value: 1, color: "rgb(var(--text-rgb) / 0.14)" }];
   const latestActivities = activities.data.slice(0, 8);
+  const trendingCutoff = Date.now() - trendingWindowHours * 60 * 60 * 1000;
+  const trendingAnime = rankAnime(
+    activities.data.filter((activity) => normalizeActivityStatus(activity.status) === "success" && timestampMillis(activity.createdAt) >= trendingCutoff)
+  );
 
   if (users.loading || activities.loading || errors.loading) {
     return <HomeSkeleton />;
@@ -217,6 +253,28 @@ export function Home() {
             </PieChart>
           </ResponsiveContainer>
         </ChartCard>
+      </section>
+
+      <section className="rounded-lg border border-line bg-panel p-4 backdrop-blur">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-text">Trending Searches</h2>
+            <p className="text-sm text-text/50">Successful searches in the last {trendingWindowHours} hours.</p>
+          </div>
+          <TrendingUp className="h-5 w-5 text-primary" />
+        </div>
+        {trendingAnime.length === 0 ? (
+          <p className="text-sm text-text/52">No trending successful searches yet.</p>
+        ) : (
+          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+            {trendingAnime.map((item, index) => (
+              <div key={item.name} className="rounded-md border border-line bg-ink/24 px-3 py-2">
+                <p className="truncate text-sm font-medium text-text">{index + 1}. {item.name}</p>
+                <p className="mt-1 text-xs text-primary">{item.count} searches</p>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="rounded-lg border border-line bg-panel p-4 backdrop-blur">

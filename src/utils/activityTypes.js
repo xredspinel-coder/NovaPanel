@@ -12,6 +12,10 @@ export function normalizeActivityStatus(status) {
     return "rejected";
   }
 
+  if (status === "success_trusted_low_similarity" || status === "trusted_low_similarity") {
+    return "success";
+  }
+
   if (status === "error") {
     return "failed";
   }

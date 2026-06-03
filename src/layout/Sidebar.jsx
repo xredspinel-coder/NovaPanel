@@ -2,6 +2,7 @@ import {
   Activity,
   AlertTriangle,
   BarChart3,
+  Flag,
   Home,
   Server,
   SquareTerminal,
@@ -14,6 +15,7 @@ const items = [
   { path: "/users", label: "Users", icon: Users },
   { path: "/activities", label: "Activities", icon: Activity },
   { path: "/analytics", label: "Analytics", icon: BarChart3 },
+  { path: "/wrong-matches", label: "Wrong Matches", icon: Flag },
   { path: "/system", label: "System", icon: Server },
   { path: "/errors", label: "Errors", icon: AlertTriangle },
   { path: "/console", label: "Developer Console", icon: SquareTerminal }

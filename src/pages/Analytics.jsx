@@ -1,5 +1,6 @@
-import { collection, limit, orderBy, query } from "firebase/firestore";
-import { BarChart3, CheckCircle2, TrendingUp, XCircle } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { collection, doc, limit, onSnapshot, orderBy, query } from "firebase/firestore";
+import { BarChart3, CheckCircle2, Shuffle, TrendingUp, Trophy, XCircle } from "lucide-react";
 import {
   Area,
   AreaChart,
@@ -20,6 +21,7 @@ import { useFirestoreCollection } from "../hooks/useFirestoreCollection.js";
 
 function normalizeStatus(status) {
   if (status === "low_similarity") return "rejected";
+  if (status === "success_trusted_low_similarity" || status === "trusted_low_similarity") return "success";
   if (status === "error") return "failed";
   return status || "unknown";
 }
@@ -79,12 +81,77 @@ function similarityValue(activity) {
   return Number.isFinite(value) ? value : null;
 }
 
+function rankAnime(activities) {
+  const counts = new Map();
+
+  activities.forEach((activity) => {
+    const name = activityLabel(activity);
+
+    if (!name || name === "Unknown") {
+      return;
+    }
+
+    const key = String(activity.anilistId || name);
+    const current = counts.get(key) || {
+      name,
+      count: 0,
+      anilistId: activity.anilistId || null,
+      anilistUrl: activity.anilistUrl || null
+    };
+
+    current.count += 1;
+    counts.set(key, current);
+  });
+
+  return [...counts.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+}
+
+function RankingList({ items }) {
+  if (!items.length) {
+    return <p className="text-sm text-text/50">No successful searches in this window.</p>;
+  }
+
+  return (
+    <ol className="space-y-2">
+      {items.map((item, index) => (
+        <li key={`${item.name}-${index}`} className="flex items-center justify-between gap-3 rounded-md border border-line bg-ink/24 px-3 py-2 text-sm">
+          <span className="min-w-0 truncate text-text/78">{index + 1}. {item.name}</span>
+          <span className="shrink-0 text-primary">{item.count}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function ListCard({ title, description, children, icon: Icon }) {
+  return (
+    <section className="rounded-lg border border-line bg-panel/88 p-4 backdrop-blur">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-text">{title}</h2>
+          <p className="text-sm text-text/50">{description}</p>
+        </div>
+        {Icon ? <Icon className="h-5 w-5 text-primary" /> : null}
+      </div>
+      {children}
+    </section>
+  );
+}
+
 export function Analytics() {
   const analytics = useFirestoreCollection(
     query(collection(db, "analytics", "daily", "days"), orderBy("date", "desc"), limit(30)),
     []
   );
   const activities = useFirestoreCollection(query(collection(db, "activities"), orderBy("createdAt", "desc"), limit(500)), []);
+  const [trendingWindowHours, setTrendingWindowHours] = useState(24);
+
+  useEffect(() => {
+    return onSnapshot(doc(db, "settings", "global"), (snapshot) => {
+      const hours = Number(snapshot.exists() ? snapshot.data().trendingWindowHours : 24);
+      setTrendingWindowHours(Number.isFinite(hours) && hours > 0 ? hours : 24);
+    });
+  }, []);
 
   const totals = activities.data.reduce(
     (acc, activity) => {
@@ -201,6 +268,24 @@ export function Analytics() {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 8)
     .map(([name, count]) => ({ name, count }));
+  const successfulActivities = activities.data.filter((activity) => normalizeStatus(activity.status) === "success");
+  const now = Date.now();
+  const trendingCutoff = now - trendingWindowHours * 60 * 60 * 1000;
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const weekCutoff = now - 7 * 24 * 60 * 60 * 1000;
+  const trendingAnime = rankAnime(successfulActivities.filter((activity) => timestampMillis(activity.createdAt) >= trendingCutoff)).slice(0, 6);
+  const topAnimeAllTime = rankAnime(successfulActivities).slice(0, 6);
+  const topAnimeToday = rankAnime(successfulActivities.filter((activity) => timestampMillis(activity.createdAt) >= todayStart.getTime())).slice(0, 6);
+  const topAnimeWeek = rankAnime(successfulActivities.filter((activity) => timestampMillis(activity.createdAt) >= weekCutoff)).slice(0, 6);
+  const randomCandidates = successfulActivities.filter((activity) => activity.anilistId);
+  const randomAnime = useMemo(() => {
+    if (!randomCandidates.length) {
+      return null;
+    }
+
+    return randomCandidates[Math.floor(Math.random() * randomCandidates.length)];
+  }, [randomCandidates.map((activity) => activity.id).join("|")]);
 
   const similarityDistribution = [
     { name: "0-59", count: 0 },
@@ -241,6 +326,40 @@ export function Analytics() {
         <MetricCard label="Rejected" value={totals.rejected} detail="No quota consumed" icon={BarChart3} />
         <MetricCard label="Failed" value={totals.failed} detail="Processing/API failures" icon={XCircle} />
         <MetricCard label="Avg similarity" value={`${averageSimilarity}%`} detail={`${totals.similarityCount} scored results`} icon={TrendingUp} />
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-2">
+        <ListCard title="Trending Searches" description={`Successful searches in the last ${trendingWindowHours} hours.`} icon={TrendingUp}>
+          <RankingList items={trendingAnime} />
+        </ListCard>
+        <ListCard title="Random Anime" description="Sampled from successful activity history." icon={Shuffle}>
+          {randomAnime ? (
+            <div className="rounded-md border border-line bg-ink/24 px-3 py-3">
+              <p className="text-sm text-text/54">Try this one</p>
+              <p className="mt-1 text-lg font-semibold text-text">{activityLabel(randomAnime)}</p>
+              {randomAnime.anilistUrl ? (
+                <a className="mt-3 inline-flex text-sm text-primary hover:text-text" href={randomAnime.anilistUrl} target="_blank" rel="noreferrer">
+                  Open AniList
+                </a>
+              ) : null}
+              <p className="mt-3 text-xs text-text/42">Source: successful activity history</p>
+            </div>
+          ) : (
+            <p className="text-sm text-text/50">No successful activities with AniList IDs yet.</p>
+          )}
+        </ListCard>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-3">
+        <ListCard title="Top Anime All-Time" description="All successful activity records in the current window." icon={Trophy}>
+          <RankingList items={topAnimeAllTime} />
+        </ListCard>
+        <ListCard title="Top Anime This Week" description="Successful searches from the last 7 days." icon={Trophy}>
+          <RankingList items={topAnimeWeek} />
+        </ListCard>
+        <ListCard title="Top Anime Today" description="Successful searches since local midnight." icon={Trophy}>
+          <RankingList items={topAnimeToday} />
+        </ListCard>
       </section>
 
       <section className="grid gap-4 xl:grid-cols-2">

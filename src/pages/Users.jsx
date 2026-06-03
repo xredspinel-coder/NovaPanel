@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { collection, doc, limit, onSnapshot, orderBy, query, serverTimestamp, Timestamp, updateDoc } from "firebase/firestore";
-import { CalendarClock, CheckCircle2, Shield, ShieldOff, Trash2, UserRound } from "lucide-react";
+import { BadgeCheck, CalendarClock, CheckCircle2, Shield, ShieldOff, Trash2, UserRound } from "lucide-react";
 import { db } from "../firebase.js";
 import { ActionMenu } from "../components/ActionMenu.jsx";
 import { ConfirmDialog } from "../components/ConfirmDialog.jsx";
@@ -56,8 +56,8 @@ function accountStatus(user) {
     return "Blocked";
   }
 
-  if (user.isAdmin) {
-    return "Admin";
+  if (isTrustedActive(user)) {
+    return "Trusted";
   }
 
   return "Active";
@@ -68,7 +68,7 @@ function accountTone(user) {
     return "border-red-400/20 bg-red-400/10 text-red-200";
   }
 
-  if (user.isAdmin) {
+  if (isTrustedActive(user)) {
     return "border-primary/24 bg-primary/10 text-primary";
   }
 
@@ -80,12 +80,29 @@ function isUnlimitedActive(user) {
   return until > Date.now();
 }
 
+function isTrustedActive(user) {
+  const until = timestampMillis(user.trustedUntil);
+  return Boolean(user.trustedUser) && (!until || until > Date.now());
+}
+
+function dailyLimitValue(user, globalDailyLimit) {
+  return user.dailyLimitOverride ?? globalDailyLimit;
+}
+
+function remainingUsageLabel(user, globalDailyLimit) {
+  if (isUnlimitedActive(user)) {
+    return "Unlimited";
+  }
+
+  return Math.max(0, Number(dailyLimitValue(user, globalDailyLimit)) - Number(user.dailyUsed || 0));
+}
+
 function dailyUsageLabel(user, globalDailyLimit) {
   if (isUnlimitedActive(user)) {
     return `${user.dailyUsed || 0} / Unlimited`;
   }
 
-  return `${user.dailyUsed || 0} / ${user.dailyLimitOverride ?? globalDailyLimit}`;
+  return `${user.dailyUsed || 0} / ${dailyLimitValue(user, globalDailyLimit)}`;
 }
 
 function DetailStat({ label, value, icon: Icon }) {
@@ -95,7 +112,7 @@ function DetailStat({ label, value, icon: Icon }) {
         <p className="text-xs uppercase tracking-[0.14em] text-text/38">{label}</p>
         {Icon ? <Icon className="h-4 w-4 text-primary" /> : null}
       </div>
-      <p className="mt-2 break-all text-sm font-medium text-text/78">{value || "-"}</p>
+      <p className="mt-2 break-all text-sm font-medium text-text/78">{value === null || value === undefined || value === "" ? "-" : value}</p>
     </div>
   );
 }
@@ -118,12 +135,14 @@ function userActionItems({ user, onManage, onPatch, onDelete }) {
       ? { label: "Unblock", onSelect: () => onPatch(docId, { isBlocked: false }) }
       : { label: "Block", onSelect: () => onPatch(docId, { isBlocked: true }) },
     { label: "Grant Unlimited", onSelect: () => onPatch(docId, { unlimitedUntil: grantUntil() }) },
-    { label: user.isAdmin ? "Unset Admin" : "Set Admin", onSelect: () => onPatch(docId, { isAdmin: !user.isAdmin }) },
+    user.trustedUser
+      ? { label: "Remove Trusted", onSelect: () => onPatch(docId, { trustedUser: false, trustedUntil: null }) }
+      : { label: "Trusted User", onSelect: () => onPatch(docId, { trustedUser: true, trustedUntil: null }) },
     { label: "Delete", danger: true, onSelect: onDelete }
   ];
 }
 
-function UserDetailsDrawer({ user, globalDailyLimit, activities, onClose, onPatch, onDelete }) {
+function UserDetailsDrawer({ user, globalDailyLimit, userStats, activities, onClose, onPatch, onDelete }) {
   const [tab, setTab] = useState("overview");
 
   useEffect(() => {
@@ -141,8 +160,12 @@ function UserDetailsDrawer({ user, globalDailyLimit, activities, onClose, onPatc
     .slice(0, 10);
   const successful = userActivities.filter((activity) => normalizeActivityStatus(activity.status) === "success").length;
   const successRate = userActivities.length ? Math.round((successful / userActivities.length) * 100) : 0;
+  const statsTotal = Number(userStats?.totalSearches || userActivities.length);
+  const statsSuccess = Number(userStats?.successfulSearches || successful);
+  const statsSuccessRate = statsTotal ? Math.round((statsSuccess / statsTotal) * 100) : successRate;
   const tabs = [
     ["overview", "Overview"],
+    ["stats", "Stats"],
     ["activity", "Activity"],
     ["permissions", "Permissions"]
   ];
@@ -178,8 +201,28 @@ function UserDetailsDrawer({ user, globalDailyLimit, activities, onClose, onPatc
             <DetailStat label="Username" value={user.username ? `@${user.username}` : "No username"} />
             <DetailStat label="Display name" value={userDisplayName(user)} />
             <DetailStat label="Account status" value={accountStatus(user)} icon={user.isBlocked ? ShieldOff : Shield} />
+            <DetailStat label="Trusted status" value={isTrustedActive(user) ? "Trusted" : "Not trusted"} icon={BadgeCheck} />
             <DetailStat label="Last activity" value={formatDate(user.lastSeenAt)} icon={CalendarClock} />
             <DetailStat label="Daily usage" value={dailyUsageLabel(user, globalDailyLimit)} icon={CheckCircle2} />
+            <DetailStat label="Remaining" value={remainingUsageLabel(user, globalDailyLimit)} />
+            <DetailStat label="Daily limit" value={dailyLimitValue(user, globalDailyLimit)} />
+            <DetailStat label="Override limit" value={user.dailyLimitOverride ?? "Global"} />
+            <DetailStat label="Unlimited until" value={formatDate(user.unlimitedUntil)} />
+            <DetailStat label="Trusted until" value={formatDate(user.trustedUntil) || "No expiry"} />
+          </section>
+        ) : null}
+
+        {tab === "stats" ? (
+          <section className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <DetailStat label="Total searches" value={statsTotal} />
+              <DetailStat label="Success rate" value={`${statsSuccessRate}%`} />
+              <DetailStat label="Successful" value={userStats?.successfulSearches ?? successful} />
+              <DetailStat label="Rejected" value={userStats?.rejectedSearches ?? 0} />
+              <DetailStat label="Failed" value={userStats?.failedSearches ?? 0} />
+              <DetailStat label="Average similarity" value={`${userStats?.averageSimilarity ?? 0}%`} />
+              <DetailStat label="Most searched anime" value={userStats?.topAnime?.animeTitle || "Not enough data"} />
+            </div>
           </section>
         ) : null}
 
@@ -245,12 +288,26 @@ function UserDetailsDrawer({ user, globalDailyLimit, activities, onClose, onPatc
                   }
                 />
               </label>
+              <label className="block">
+                <span className="text-xs uppercase tracking-[0.16em] text-text/42">Trusted until</span>
+                <input
+                  key={`${docId}-trusted-${toDatetimeLocal(user.trustedUntil)}`}
+                  className={`${inputClass} mt-2`}
+                  type="datetime-local"
+                  defaultValue={toDatetimeLocal(user.trustedUntil)}
+                  onBlur={(event) =>
+                    onPatch(docId, {
+                      trustedUntil: event.target.value ? Timestamp.fromDate(new Date(event.target.value)) : null
+                    })
+                  }
+                />
+              </label>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="flex items-center justify-between gap-3 rounded-md border border-line bg-ink/24 px-3 py-3 text-sm text-text/76">
-                <span>Admin flag</span>
-                <input type="checkbox" checked={Boolean(user.isAdmin)} onChange={(event) => onPatch(docId, { isAdmin: event.target.checked })} />
+                <span>Trusted User</span>
+                <input type="checkbox" checked={Boolean(user.trustedUser)} onChange={(event) => onPatch(docId, { trustedUser: event.target.checked })} />
               </label>
               <label className="flex items-center justify-between gap-3 rounded-md border border-line bg-ink/24 px-3 py-3 text-sm text-text/76">
                 <span>Block status</span>
@@ -296,8 +353,13 @@ function UserCard({ user, globalDailyLimit, selectMode, selected, onSelect, onMa
           <div className="min-w-0">
             <p className="truncate text-lg font-semibold text-text">{userDisplayName(user)}</p>
             <p className="mt-1 truncate text-sm text-text/52">@{user.username || "no_username"}</p>
-            <div className="mt-3">
+            <div className="mt-3 flex flex-wrap gap-2">
               <UserStatusBadge user={user} />
+              {isTrustedActive(user) ? (
+                <span className="inline-flex h-6 items-center rounded-full border border-primary/24 bg-primary/10 px-2.5 text-xs text-primary">
+                  Trusted
+                </span>
+              ) : null}
             </div>
           </div>
         </label>
@@ -317,6 +379,14 @@ function UserCard({ user, globalDailyLimit, selectMode, selected, onSelect, onMa
           <span className="text-text">{dailyUsageLabel(user, globalDailyLimit)}</span>
         </div>
         <div className="flex items-center justify-between gap-3">
+          <span className="text-text/42">Remaining</span>
+          <span className="text-text">{remainingUsageLabel(user, globalDailyLimit)}</span>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-text/42">Trusted</span>
+          <span className="text-text">{isTrustedActive(user) ? "Enabled" : "No"}</span>
+        </div>
+        <div className="flex items-center justify-between gap-3">
           <span className="text-text/42">Last activity</span>
           <span className="text-right text-text">{formatDate(user.lastSeenAt)}</span>
         </div>
@@ -334,6 +404,7 @@ function UserCard({ user, globalDailyLimit, selectMode, selected, onSelect, onMa
 export function Users() {
   const users = useFirestoreCollection(query(collection(db, "users"), orderBy("lastSeenAt", "desc"), limit(300)), []);
   const activities = useFirestoreCollection(query(collection(db, "activities"), orderBy("createdAt", "desc"), limit(500)), []);
+  const userStats = useFirestoreCollection(query(collection(db, "userStats"), limit(500)), []);
   const [search, setSearch] = useState("");
   const [globalDailyLimit, setGlobalDailyLimit] = useState(5);
   const [selectMode, setSelectMode] = useState(false);
@@ -383,6 +454,8 @@ export function Users() {
 
     return users.data.find((user) => userDocumentId(user) === selectedUserId) || null;
   }, [selectedUserId, users.data]);
+  const userStatsById = useMemo(() => new Map(userStats.data.map((stats) => [String(stats.id || stats.userId), stats])), [userStats.data]);
+  const selectedUserStats = selectedUser ? userStatsById.get(userDocumentId(selectedUser)) || null : null;
 
   async function patchUser(userId, payload) {
     await updateDoc(doc(db, "users", String(userId)), {
@@ -432,8 +505,10 @@ export function Users() {
     setSelectedUserIds([]);
   }
 
-  if (users.error) {
-    return <EmptyState title="Could not load users" detail={users.error} />;
+  const loadError = users.error || userStats.error;
+
+  if (loadError) {
+    return <EmptyState title="Could not load users" detail={loadError} />;
   }
 
   return (
@@ -441,7 +516,7 @@ export function Users() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-text">Users</h1>
-          <p className="text-sm text-text/54">Limits, blocks, admin flag, and unlimited access.</p>
+          <p className="text-sm text-text/54">Limits, blocks, trusted status, and unlimited access.</p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           {!selectMode ? (
@@ -492,6 +567,7 @@ export function Users() {
       <UserDetailsDrawer
         user={selectedUser}
         globalDailyLimit={globalDailyLimit}
+        userStats={selectedUserStats}
         activities={activities.data}
         onClose={() => setSelectedUserId(null)}
         onPatch={patchUser}

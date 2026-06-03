@@ -51,6 +51,16 @@ service cloud.firestore {
       allow create, update: if false;
     }
 
+    match /wrongMatchReports/{reportId} {
+      allow read, update, delete: if isActiveAdmin();
+      allow create: if false;
+    }
+
+    match /userStats/{telegramId} {
+      allow read: if isActiveAdmin();
+      allow write: if false;
+    }
+
     match /analytics/{document=**} {
       allow read: if isActiveAdmin();
       allow write: if false;
