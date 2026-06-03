@@ -388,6 +388,9 @@ function mediaFieldsAvailable(activity = {}) {
     legacyVideoUrl: Boolean(activity.videoUrl),
     botResponseVideoUrl: Boolean(activity.botResponse?.videoUrl),
     resultImageUrl: Boolean(media.resultImageUrl || activity.resultImageUrl || activity.imageUrl || activity.botResponse?.imageUrl),
+    extractedImageUrl: Boolean(media.extractedImageUrl || activity.extractedImageUrl),
+    inputSourceDomain: Boolean(activity.inputSourceDomain),
+    previewExtractionStatus: Boolean(activity.previewExtractionStatus),
     videoUrl: Boolean(activity.videoUrl),
     imageUrl: Boolean(activity.imageUrl),
     inputUrl: Boolean(activity.inputUrl)
@@ -712,6 +715,8 @@ function collectMedia(activity = {}) {
     inputImageFallbackSources: mediaSourceList([
       [media.inputTelegramFileUrl, "input", "media.inputTelegramFileUrl"],
       [record.inputTelegramFileUrl, "input", "inputTelegramFileUrl"],
+      [media.extractedImageUrl, "input", "media.extractedImageUrl"],
+      [record.extractedImageUrl, "input", "extractedImageUrl"],
       [media.inputImageUrl, "input", "media.inputImageUrl"],
       [record.inputImageUrl, "input", "inputImageUrl"],
       [record.inputPreview, "input", "inputPreview"],
@@ -1824,6 +1829,17 @@ function ActivityDetails({ activity, onClose, onOpenImage }) {
       return;
     }
 
+    const previewExtraction = {
+      url: activity.inputUrl || null,
+      domain: activity.inputSourceDomain || null,
+      extractorUsed: activity.previewExtractionMethod || null,
+      imageCandidateCount: activity.previewExtractionCandidateCount ?? null,
+      selectedImageUrl: activity.extractedImageUrl || activity.media?.extractedImageUrl || null,
+      failureReason: activity.previewExtractionError || null,
+      status: activity.previewExtractionStatus || null,
+      sourceType: activity.sourceType || activity.source || null
+    };
+
     safeAddDeveloperConsoleEntry({
       source: "activity media resolver",
       method: "MEDIA",
@@ -1851,6 +1867,7 @@ function ActivityDetails({ activity, onClose, onOpenImage }) {
         videoStatus: media.videoStatus,
         videoFallbackDecision: media.videoFallbackDecision,
         imageFallbackDecision: media.imageFallbackDecision,
+        previewExtraction,
         invalidVideoSources: media.invalidVideoSources.map((entry) => ({
           fieldName: entry.source?.fieldName || null,
           url: entry.source?.url || null,
@@ -1870,6 +1887,7 @@ function ActivityDetails({ activity, onClose, onOpenImage }) {
         imageResolverState: media.imageStatus,
         videoFallbackDecision: media.videoFallbackDecision,
         imageFallbackDecision: media.imageFallbackDecision,
+        previewExtraction,
         inputImageError: media.inputImageError || null,
         imageError: media.imageError || null,
         videoError: media.videoError || null,
@@ -1898,7 +1916,17 @@ function ActivityDetails({ activity, onClose, onOpenImage }) {
     media.videoFallbackUrl,
     media.videoSources[0]?.kind,
     media.videoSources[0]?.url,
-    media.imageSources[0]?.kind
+    media.imageSources[0]?.kind,
+    activity?.inputUrl,
+    activity?.inputSourceDomain,
+    activity?.previewExtractionMethod,
+    activity?.previewExtractionCandidateCount,
+    activity?.extractedImageUrl,
+    activity?.media?.extractedImageUrl,
+    activity?.previewExtractionError,
+    activity?.previewExtractionStatus,
+    activity?.sourceType,
+    activity?.source
   ]);
 
   if (!activity) {
@@ -1994,7 +2022,16 @@ function ActivityDetails({ activity, onClose, onOpenImage }) {
         <section className="space-y-3 rounded-lg border border-line bg-ink/24 p-4">
           <h3 className="font-medium text-text">Input Information</h3>
           <div className="grid gap-4">
-            <DetailRow label="Input URL" value={activity.inputUrl} href={activity.inputUrl} />
+            <DetailRow label="Original submitted URL" value={activity.inputUrl} href={activity.inputUrl} />
+            <DetailRow
+              label="Extracted preview image URL"
+              value={activity.extractedImageUrl || activity.media?.extractedImageUrl}
+              href={activity.extractedImageUrl || activity.media?.extractedImageUrl}
+            />
+            <DetailRow label="Source domain" value={activity.inputSourceDomain || activity.userInput?.inputSourceDomain} />
+            <DetailRow label="Extraction method" value={activity.previewExtractionMethod} />
+            <DetailRow label="Extraction status" value={activity.previewExtractionStatus} />
+            <DetailRow label="Extraction error" value={activity.previewExtractionError} />
             <DetailRow label="Input file ID" value={activity.inputFileId || activity.media?.inputTelegramFileId} />
             <DetailRow label="Message text" value={activity.userInput?.text} />
           </div>

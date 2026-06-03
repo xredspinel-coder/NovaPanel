@@ -99,6 +99,8 @@ function errorPreviewImageUrl(record = {}) {
   return [
     media.inputTelegramFileUrl,
     record.inputTelegramFileUrl,
+    media.extractedImageUrl,
+    record.extractedImageUrl,
     media.inputImageUrl,
     record.inputImageUrl,
     record.inputPreview,
@@ -136,6 +138,7 @@ function deleteTarget(record) {
 function ErrorCard({ error, selectMode, selected, onSelect, onDelete, onOpenImage }) {
   const url = inputUrl(error);
   const previewUrl = errorPreviewImageUrl(error);
+  const previewExtractionFailed = error.previewExtractionStatus === "failed" || Boolean(error.previewExtractionError);
 
   return (
     <article className="flex h-full min-w-0 flex-col rounded-lg border border-line bg-panel/92 p-4 text-text/72 backdrop-blur transition hover:border-primary/50">
@@ -192,7 +195,25 @@ function ErrorCard({ error, selectMode, selected, onSelect, onDelete, onOpenImag
             <dd className="mt-1 text-text/46">-</dd>
           )}
         </div>
+        <div className="min-w-0">
+          <dt className="text-xs uppercase tracking-[0.16em] text-text/38">Source domain</dt>
+          <dd className="mt-1 truncate text-text/72" title={error.inputSourceDomain || ""}>
+            {error.inputSourceDomain || "-"}
+          </dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="text-xs uppercase tracking-[0.16em] text-text/38">Preview extraction</dt>
+          <dd className="mt-1 truncate text-text/72" title={error.previewExtractionMethod || ""}>
+            {error.previewExtractionStatus || "-"}{error.previewExtractionMethod ? ` / ${error.previewExtractionMethod}` : ""}
+          </dd>
+        </div>
       </dl>
+
+      {previewExtractionFailed ? (
+        <p className="mt-4 rounded-md border border-red-300/18 bg-red-400/10 px-3 py-2 text-sm text-red-100">
+          Preview extraction failed: {error.previewExtractionError || error.message || "No usable image preview was found."}
+        </p>
+      ) : null}
 
       {previewUrl ? (
         <button
@@ -249,7 +270,21 @@ export function Errors() {
     }
 
     return combined.filter((error) =>
-      [error.message, error.userId, error.source, inputUrl(error), error.failureType, error.recordType, error.sourceCollection]
+      [
+        error.message,
+        error.userId,
+        error.source,
+        error.sourceType,
+        inputUrl(error),
+        error.extractedImageUrl,
+        error.inputSourceDomain,
+        error.previewExtractionMethod,
+        error.previewExtractionStatus,
+        error.previewExtractionError,
+        error.failureType,
+        error.recordType,
+        error.sourceCollection
+      ]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(needle))
     );

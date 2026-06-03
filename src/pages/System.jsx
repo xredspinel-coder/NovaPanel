@@ -336,7 +336,6 @@ export function System() {
           <div className="space-y-3">
             <RecentSignal label="Daily limit" value={settingsState.data?.dailyLimit ?? "Default"} />
             <RecentSignal label="Similarity threshold" value={settingsState.data?.similarityThreshold ?? "Default"} />
-            <RecentSignal label="Video preview" value={settingsState.data?.enableVideoPreview === false ? "Disabled" : "Enabled"} />
           </div>
         </div>
       </section>

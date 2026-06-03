@@ -20,6 +20,11 @@ import { EmptyState } from "../components/EmptyState.jsx";
 import { useFirestoreCollection } from "../hooks/useFirestoreCollection.js";
 import { normalizeActivityStatus } from "../utils/activityTypes.js";
 
+const TRENDING_WINDOW_HOURS = 24;
+const defaultFeatureSettings = {
+  enableTrendingSearches: true
+};
+
 function formatDate(value) {
   return value?.toDate ? value.toDate().toLocaleString() : "Just now";
 }
@@ -113,12 +118,14 @@ export function Home() {
   const users = useFirestoreCollection(query(collection(db, "users"), limit(300)), []);
   const activities = useFirestoreCollection(query(collection(db, "activities"), orderBy("createdAt", "desc"), limit(300)), []);
   const errors = useFirestoreCollection(query(collection(db, "errors"), orderBy("createdAt", "desc"), limit(50)), []);
-  const [trendingWindowHours, setTrendingWindowHours] = useState(24);
+  const [featureSettings, setFeatureSettings] = useState(defaultFeatureSettings);
 
   useEffect(() => {
     return onSnapshot(doc(db, "settings", "global"), (snapshot) => {
-      const hours = Number(snapshot.exists() ? snapshot.data().trendingWindowHours : 24);
-      setTrendingWindowHours(Number.isFinite(hours) && hours > 0 ? hours : 24);
+      setFeatureSettings({
+        ...defaultFeatureSettings,
+        ...(snapshot.exists() ? snapshot.data() : {})
+      });
     });
   }, []);
 
@@ -190,7 +197,7 @@ export function Home() {
     ? statusChartData
     : [{ name: "No activity", value: 1, color: "rgb(var(--text-rgb) / 0.14)" }];
   const latestActivities = activities.data.slice(0, 8);
-  const trendingCutoff = Date.now() - trendingWindowHours * 60 * 60 * 1000;
+  const trendingCutoff = Date.now() - TRENDING_WINDOW_HOURS * 60 * 60 * 1000;
   const trendingAnime = rankAnime(
     activities.data.filter((activity) => normalizeActivityStatus(activity.status) === "success" && timestampMillis(activity.createdAt) >= trendingCutoff)
   );
@@ -228,18 +235,18 @@ export function Home() {
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Success vs Rejected" description="Current activity window split by result." chartClassName="rounded-md bg-panel">
+        <ChartCard title="Success vs Rejected" description="Current activity window split by result." chartClassName="rounded-md">
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
                 data={donutData}
                 dataKey="value"
                 nameKey="name"
-                innerRadius={58}
+                innerRadius={54}
                 outerRadius={92}
                 paddingAngle={0}
                 cornerRadius={0}
-                stroke="rgb(var(--surface-rgb) / 1)"
+                stroke="rgb(var(--background-rgb) / 1)"
                 strokeWidth={6}
                 strokeLinejoin="miter"
                 startAngle={90}
@@ -255,27 +262,29 @@ export function Home() {
         </ChartCard>
       </section>
 
-      <section className="rounded-lg border border-line bg-panel p-4 backdrop-blur">
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-text">Trending Searches</h2>
-            <p className="text-sm text-text/50">Successful searches in the last {trendingWindowHours} hours.</p>
+      {featureSettings.enableTrendingSearches ? (
+        <section className="rounded-lg border border-line bg-panel p-4 backdrop-blur">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-text">Trending Searches</h2>
+              <p className="text-sm text-text/50">Successful searches in the last {TRENDING_WINDOW_HOURS} hours.</p>
+            </div>
+            <TrendingUp className="h-5 w-5 text-primary" />
           </div>
-          <TrendingUp className="h-5 w-5 text-primary" />
-        </div>
-        {trendingAnime.length === 0 ? (
-          <p className="text-sm text-text/52">No trending successful searches yet.</p>
-        ) : (
-          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
-            {trendingAnime.map((item, index) => (
-              <div key={item.name} className="rounded-md border border-line bg-ink/24 px-3 py-2">
-                <p className="truncate text-sm font-medium text-text">{index + 1}. {item.name}</p>
-                <p className="mt-1 text-xs text-primary">{item.count} searches</p>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
+          {trendingAnime.length === 0 ? (
+            <p className="text-sm text-text/52">No trending successful searches yet.</p>
+          ) : (
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+              {trendingAnime.map((item, index) => (
+                <div key={item.name} className="rounded-md border border-line bg-ink/24 px-3 py-2">
+                  <p className="truncate text-sm font-medium text-text">{index + 1}. {item.name}</p>
+                  <p className="mt-1 text-xs text-primary">{item.count} searches</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      ) : null}
 
       <section className="rounded-lg border border-line bg-panel p-4 backdrop-blur">
         <div className="mb-4 flex items-center justify-between">

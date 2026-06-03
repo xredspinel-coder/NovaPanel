@@ -13,6 +13,11 @@ import { useFirestoreCollection } from "../hooks/useFirestoreCollection.js";
 import { normalizeActivityStatus } from "../utils/activityTypes.js";
 import { deleteFirestoreDocument } from "../utils/firestoreDelete.js";
 
+const defaultFeatureSettings = {
+  enableMyStatistics: true,
+  enableMyUsage: true
+};
+
 function formatDate(value) {
   return value?.toDate ? value.toDate().toLocaleString() : "-";
 }
@@ -56,20 +61,12 @@ function accountStatus(user) {
     return "Blocked";
   }
 
-  if (isTrustedActive(user)) {
-    return "Trusted";
-  }
-
   return "Active";
 }
 
 function accountTone(user) {
   if (user.isBlocked) {
     return "border-red-400/20 bg-red-400/10 text-red-200";
-  }
-
-  if (isTrustedActive(user)) {
-    return "border-primary/24 bg-primary/10 text-primary";
   }
 
   return "border-emerald-400/20 bg-emerald-400/10 text-emerald-200";
@@ -125,6 +122,14 @@ function UserStatusBadge({ user }) {
   );
 }
 
+function TrustedBadge() {
+  return (
+    <span className="inline-flex h-6 items-center rounded-full border border-primary/24 bg-primary/10 px-2.5 text-xs text-primary">
+      Trusted
+    </span>
+  );
+}
+
 function userActionItems({ user, onManage, onPatch, onDelete }) {
   const docId = userDocumentId(user);
   const grantUntil = () => Timestamp.fromDate(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000));
@@ -142,12 +147,18 @@ function userActionItems({ user, onManage, onPatch, onDelete }) {
   ];
 }
 
-function UserDetailsDrawer({ user, globalDailyLimit, userStats, activities, onClose, onPatch, onDelete }) {
+function UserDetailsDrawer({ user, globalDailyLimit, featureSettings, userStats, activities, onClose, onPatch, onDelete }) {
   const [tab, setTab] = useState("overview");
 
   useEffect(() => {
     setTab("overview");
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!featureSettings.enableMyStatistics && tab === "stats") {
+      setTab("overview");
+    }
+  }, [featureSettings.enableMyStatistics, tab]);
 
   if (!user) {
     return null;
@@ -165,10 +176,10 @@ function UserDetailsDrawer({ user, globalDailyLimit, userStats, activities, onCl
   const statsSuccessRate = statsTotal ? Math.round((statsSuccess / statsTotal) * 100) : successRate;
   const tabs = [
     ["overview", "Overview"],
-    ["stats", "Stats"],
+    featureSettings.enableMyStatistics ? ["stats", "Stats"] : null,
     ["activity", "Activity"],
     ["permissions", "Permissions"]
-  ];
+  ].filter(Boolean);
 
   return (
     <Drawer
@@ -203,16 +214,20 @@ function UserDetailsDrawer({ user, globalDailyLimit, userStats, activities, onCl
             <DetailStat label="Account status" value={accountStatus(user)} icon={user.isBlocked ? ShieldOff : Shield} />
             <DetailStat label="Trusted status" value={isTrustedActive(user) ? "Trusted" : "Not trusted"} icon={BadgeCheck} />
             <DetailStat label="Last activity" value={formatDate(user.lastSeenAt)} icon={CalendarClock} />
-            <DetailStat label="Daily usage" value={dailyUsageLabel(user, globalDailyLimit)} icon={CheckCircle2} />
-            <DetailStat label="Remaining" value={remainingUsageLabel(user, globalDailyLimit)} />
-            <DetailStat label="Daily limit" value={dailyLimitValue(user, globalDailyLimit)} />
-            <DetailStat label="Override limit" value={user.dailyLimitOverride ?? "Global"} />
-            <DetailStat label="Unlimited until" value={formatDate(user.unlimitedUntil)} />
+            {featureSettings.enableMyUsage ? (
+              <>
+                <DetailStat label="Daily usage" value={dailyUsageLabel(user, globalDailyLimit)} icon={CheckCircle2} />
+                <DetailStat label="Remaining" value={remainingUsageLabel(user, globalDailyLimit)} />
+                <DetailStat label="Daily limit" value={dailyLimitValue(user, globalDailyLimit)} />
+                <DetailStat label="Override limit" value={user.dailyLimitOverride ?? "Global"} />
+                <DetailStat label="Unlimited until" value={formatDate(user.unlimitedUntil)} />
+              </>
+            ) : null}
             <DetailStat label="Trusted until" value={formatDate(user.trustedUntil) || "No expiry"} />
           </section>
         ) : null}
 
-        {tab === "stats" ? (
+        {tab === "stats" && featureSettings.enableMyStatistics ? (
           <section className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2">
               <DetailStat label="Total searches" value={statsTotal} />
@@ -334,7 +349,7 @@ function UserDetailsDrawer({ user, globalDailyLimit, userStats, activities, onCl
   );
 }
 
-function UserCard({ user, globalDailyLimit, selectMode, selected, onSelect, onManage, onPatch, onDelete }) {
+function UserCard({ user, globalDailyLimit, featureSettings, selectMode, selected, onSelect, onManage, onPatch, onDelete }) {
   const docId = userDocumentId(user);
 
   return (
@@ -355,11 +370,7 @@ function UserCard({ user, globalDailyLimit, selectMode, selected, onSelect, onMa
             <p className="mt-1 truncate text-sm text-text/52">@{user.username || "no_username"}</p>
             <div className="mt-3 flex flex-wrap gap-2">
               <UserStatusBadge user={user} />
-              {isTrustedActive(user) ? (
-                <span className="inline-flex h-6 items-center rounded-full border border-primary/24 bg-primary/10 px-2.5 text-xs text-primary">
-                  Trusted
-                </span>
-              ) : null}
+              {isTrustedActive(user) ? <TrustedBadge /> : null}
             </div>
           </div>
         </label>
@@ -374,14 +385,18 @@ function UserCard({ user, globalDailyLimit, selectMode, selected, onSelect, onMa
       </div>
 
       <div className="mt-5 grid gap-3 text-sm text-text/70">
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-text/42">Daily usage</span>
-          <span className="text-text">{dailyUsageLabel(user, globalDailyLimit)}</span>
-        </div>
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-text/42">Remaining</span>
-          <span className="text-text">{remainingUsageLabel(user, globalDailyLimit)}</span>
-        </div>
+        {featureSettings.enableMyUsage ? (
+          <>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-text/42">Daily usage</span>
+              <span className="text-text">{dailyUsageLabel(user, globalDailyLimit)}</span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-text/42">Remaining</span>
+              <span className="text-text">{remainingUsageLabel(user, globalDailyLimit)}</span>
+            </div>
+          </>
+        ) : null}
         <div className="flex items-center justify-between gap-3">
           <span className="text-text/42">Trusted</span>
           <span className="text-text">{isTrustedActive(user) ? "Enabled" : "No"}</span>
@@ -407,6 +422,7 @@ export function Users() {
   const userStats = useFirestoreCollection(query(collection(db, "userStats"), limit(500)), []);
   const [search, setSearch] = useState("");
   const [globalDailyLimit, setGlobalDailyLimit] = useState(5);
+  const [featureSettings, setFeatureSettings] = useState(defaultFeatureSettings);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedUserIds, setSelectedUserIds] = useState([]);
   const [selectedUserId, setSelectedUserId] = useState(null);
@@ -416,8 +432,13 @@ export function Users() {
 
   useEffect(() => {
     return onSnapshot(doc(db, "settings", "global"), (snapshot) => {
-      const dailyLimit = snapshot.exists() ? snapshot.data().dailyLimit : null;
+      const data = snapshot.exists() ? snapshot.data() : {};
+      const dailyLimit = data.dailyLimit;
       setGlobalDailyLimit(dailyLimit !== null && dailyLimit !== undefined && Number.isFinite(Number(dailyLimit)) ? Number(dailyLimit) : 5);
+      setFeatureSettings({
+        ...defaultFeatureSettings,
+        ...data
+      });
     });
   }, []);
 
@@ -552,6 +573,7 @@ export function Users() {
                 key={user.id}
                 user={user}
                 globalDailyLimit={globalDailyLimit}
+                featureSettings={featureSettings}
                 selectMode={selectMode}
                 selected={selectedUserIds.includes(docId)}
                 onSelect={(checked) => toggleSelected(docId, checked)}
@@ -567,6 +589,7 @@ export function Users() {
       <UserDetailsDrawer
         user={selectedUser}
         globalDailyLimit={globalDailyLimit}
+        featureSettings={featureSettings}
         userStats={selectedUserStats}
         activities={activities.data}
         onClose={() => setSelectedUserId(null)}

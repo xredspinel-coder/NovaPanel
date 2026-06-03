@@ -19,6 +19,13 @@ import { EmptyState } from "../components/EmptyState.jsx";
 import { MetricCard } from "../components/MetricCard.jsx";
 import { useFirestoreCollection } from "../hooks/useFirestoreCollection.js";
 
+const TRENDING_WINDOW_HOURS = 24;
+const defaultFeatureSettings = {
+  enableTrendingSearches: true,
+  enableRandomAnime: true,
+  enableTopAnime: true
+};
+
 function normalizeStatus(status) {
   if (status === "low_similarity") return "rejected";
   if (status === "success_trusted_low_similarity" || status === "trusted_low_similarity") return "success";
@@ -144,12 +151,14 @@ export function Analytics() {
     []
   );
   const activities = useFirestoreCollection(query(collection(db, "activities"), orderBy("createdAt", "desc"), limit(500)), []);
-  const [trendingWindowHours, setTrendingWindowHours] = useState(24);
+  const [featureSettings, setFeatureSettings] = useState(defaultFeatureSettings);
 
   useEffect(() => {
     return onSnapshot(doc(db, "settings", "global"), (snapshot) => {
-      const hours = Number(snapshot.exists() ? snapshot.data().trendingWindowHours : 24);
-      setTrendingWindowHours(Number.isFinite(hours) && hours > 0 ? hours : 24);
+      setFeatureSettings({
+        ...defaultFeatureSettings,
+        ...(snapshot.exists() ? snapshot.data() : {})
+      });
     });
   }, []);
 
@@ -270,7 +279,7 @@ export function Analytics() {
     .map(([name, count]) => ({ name, count }));
   const successfulActivities = activities.data.filter((activity) => normalizeStatus(activity.status) === "success");
   const now = Date.now();
-  const trendingCutoff = now - trendingWindowHours * 60 * 60 * 1000;
+  const trendingCutoff = now - TRENDING_WINDOW_HOURS * 60 * 60 * 1000;
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
   const weekCutoff = now - 7 * 24 * 60 * 60 * 1000;
@@ -328,39 +337,47 @@ export function Analytics() {
         <MetricCard label="Avg similarity" value={`${averageSimilarity}%`} detail={`${totals.similarityCount} scored results`} icon={TrendingUp} />
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-2">
-        <ListCard title="Trending Searches" description={`Successful searches in the last ${trendingWindowHours} hours.`} icon={TrendingUp}>
-          <RankingList items={trendingAnime} />
-        </ListCard>
-        <ListCard title="Random Anime" description="Sampled from successful activity history." icon={Shuffle}>
-          {randomAnime ? (
-            <div className="rounded-md border border-line bg-ink/24 px-3 py-3">
-              <p className="text-sm text-text/54">Try this one</p>
-              <p className="mt-1 text-lg font-semibold text-text">{activityLabel(randomAnime)}</p>
-              {randomAnime.anilistUrl ? (
-                <a className="mt-3 inline-flex text-sm text-primary hover:text-text" href={randomAnime.anilistUrl} target="_blank" rel="noreferrer">
-                  Open AniList
-                </a>
-              ) : null}
-              <p className="mt-3 text-xs text-text/42">Source: successful activity history</p>
-            </div>
-          ) : (
-            <p className="text-sm text-text/50">No successful activities with AniList IDs yet.</p>
-          )}
-        </ListCard>
-      </section>
+      {featureSettings.enableTrendingSearches || featureSettings.enableRandomAnime ? (
+        <section className={`grid gap-4 ${featureSettings.enableTrendingSearches && featureSettings.enableRandomAnime ? "xl:grid-cols-2" : ""}`}>
+          {featureSettings.enableTrendingSearches ? (
+            <ListCard title="Trending Searches" description={`Successful searches in the last ${TRENDING_WINDOW_HOURS} hours.`} icon={TrendingUp}>
+              <RankingList items={trendingAnime} />
+            </ListCard>
+          ) : null}
+          {featureSettings.enableRandomAnime ? (
+            <ListCard title="Random Anime" description="Sampled from successful activity history." icon={Shuffle}>
+              {randomAnime ? (
+                <div className="rounded-md border border-line bg-ink/24 px-3 py-3">
+                  <p className="text-sm text-text/54">Try this one</p>
+                  <p className="mt-1 text-lg font-semibold text-text">{activityLabel(randomAnime)}</p>
+                  {randomAnime.anilistUrl ? (
+                    <a className="mt-3 inline-flex text-sm text-primary hover:text-text" href={randomAnime.anilistUrl} target="_blank" rel="noreferrer">
+                      Open AniList
+                    </a>
+                  ) : null}
+                  <p className="mt-3 text-xs text-text/42">Source: successful activity history</p>
+                </div>
+              ) : (
+                <p className="text-sm text-text/50">No successful activities with AniList IDs yet.</p>
+              )}
+            </ListCard>
+          ) : null}
+        </section>
+      ) : null}
 
-      <section className="grid gap-4 xl:grid-cols-3">
-        <ListCard title="Top Anime All-Time" description="All successful activity records in the current window." icon={Trophy}>
-          <RankingList items={topAnimeAllTime} />
-        </ListCard>
-        <ListCard title="Top Anime This Week" description="Successful searches from the last 7 days." icon={Trophy}>
-          <RankingList items={topAnimeWeek} />
-        </ListCard>
-        <ListCard title="Top Anime Today" description="Successful searches since local midnight." icon={Trophy}>
-          <RankingList items={topAnimeToday} />
-        </ListCard>
-      </section>
+      {featureSettings.enableTopAnime ? (
+        <section className="grid gap-4 xl:grid-cols-3">
+          <ListCard title="Top Anime All-Time" description="All successful activity records in the current window." icon={Trophy}>
+            <RankingList items={topAnimeAllTime} />
+          </ListCard>
+          <ListCard title="Top Anime This Week" description="Successful searches from the last 7 days." icon={Trophy}>
+            <RankingList items={topAnimeWeek} />
+          </ListCard>
+          <ListCard title="Top Anime Today" description="Successful searches since local midnight." icon={Trophy}>
+            <RankingList items={topAnimeToday} />
+          </ListCard>
+        </section>
+      ) : null}
 
       <section className="grid gap-4 xl:grid-cols-2">
         <ChartCard title="Activity Trend" description="Total, successful, and rejected analyses over time.">
@@ -416,19 +433,20 @@ export function Analytics() {
         </ChartCard>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-2">
-        <ChartCard title="Top Searched Anime" description="Most common matched titles in the recent activity window.">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={topSearchedAnime} layout="vertical" margin={{ left: 12, right: 12, top: 8, bottom: 0 }}>
-              <CartesianGrid stroke="rgb(var(--text-rgb) / 0.08)" horizontal={false} />
-              <XAxis type="number" tick={{ fill: "rgb(var(--text-rgb) / 0.46)", fontSize: 11 }} tickLine={false} axisLine={false} allowDecimals={false} />
-              <YAxis type="category" dataKey="name" width={142} tick={{ fill: "rgb(var(--text-rgb) / 0.58)", fontSize: 11 }} tickLine={false} axisLine={false} />
-              <Tooltip contentStyle={chartTooltipStyle()} labelStyle={{ color: "var(--text-color)" }} />
-              <Bar dataKey="count" name="Searches" fill="var(--primary-color)" radius={[0, 6, 6, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartCard>
-
+      <section className={`grid gap-4 ${featureSettings.enableTopAnime ? "xl:grid-cols-2" : ""}`}>
+        {featureSettings.enableTopAnime ? (
+          <ChartCard title="Top Searched Anime" description="Most common matched titles in the recent activity window.">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={topSearchedAnime} layout="vertical" margin={{ left: 12, right: 12, top: 8, bottom: 0 }}>
+                <CartesianGrid stroke="rgb(var(--text-rgb) / 0.08)" horizontal={false} />
+                <XAxis type="number" tick={{ fill: "rgb(var(--text-rgb) / 0.46)", fontSize: 11 }} tickLine={false} axisLine={false} allowDecimals={false} />
+                <YAxis type="category" dataKey="name" width={142} tick={{ fill: "rgb(var(--text-rgb) / 0.58)", fontSize: 11 }} tickLine={false} axisLine={false} />
+                <Tooltip contentStyle={chartTooltipStyle()} labelStyle={{ color: "var(--text-color)" }} />
+                <Bar dataKey="count" name="Searches" fill="var(--primary-color)" radius={[0, 6, 6, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </ChartCard>
+        ) : null}
         <ChartCard title="Top Active Users" description="Users with the most recent analyses.">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={topActiveUsers} layout="vertical" margin={{ left: 12, right: 12, top: 8, bottom: 0 }}>
