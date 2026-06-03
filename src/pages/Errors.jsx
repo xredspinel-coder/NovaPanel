@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { collection, limit, orderBy, query } from "firebase/firestore";
 import { Trash2 } from "lucide-react";
 import { db } from "../firebase.js";
@@ -7,6 +7,7 @@ import { EmptyState } from "../components/EmptyState.jsx";
 import { StatusPill } from "../components/StatusPill.jsx";
 import { buttonClass, inputClass } from "../components/Field.jsx";
 import { ImageLightbox } from "../components/ImageLightbox.jsx";
+import { SelectionToolbar } from "../components/SelectionToolbar.jsx";
 import { useFirestoreCollection } from "../hooks/useFirestoreCollection.js";
 import { failureLabel, isTechnicalFailure, normalizeActivityStatus } from "../utils/activityTypes.js";
 import { deleteFirestoreDocument } from "../utils/firestoreDelete.js";
@@ -253,6 +254,19 @@ export function Errors() {
         .some((value) => String(value).toLowerCase().includes(needle))
     );
   }, [combined, search]);
+  const visibleErrorKeys = useMemo(() => filtered.map((error) => error.key).filter(Boolean), [filtered]);
+
+  useEffect(() => {
+    if (!selectMode) {
+      return;
+    }
+
+    const visibleKeys = new Set(visibleErrorKeys);
+    setSelectedErrorKeys((current) => {
+      const next = current.filter((key) => visibleKeys.has(key));
+      return next.length === current.length ? current : next;
+    });
+  }, [selectMode, visibleErrorKeys]);
 
   function toggleSelected(errorKey, checked) {
     setSelectedErrorKeys((current) =>
@@ -297,7 +311,7 @@ export function Errors() {
     setSelectedErrorKeys([]);
   }
 
-  const selectedRecords = combined.filter((record) => selectedErrorKeys.includes(record.key));
+  const selectedRecords = filtered.filter((record) => selectedErrorKeys.includes(record.key));
   const loadError = errors.error || activities.error;
 
   if (loadError) {
@@ -312,26 +326,26 @@ export function Errors() {
           <p className="text-sm text-text/54">System, media, and source failures from bot processing.</p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row">
-          {selectMode ? (
-            <>
-              <span className="rounded-md border border-line px-3 py-2 text-sm text-text/62">{selectedRecords.length} selected</span>
-              {selectedRecords.length > 0 ? (
-                <button className={buttonClass} type="button" onClick={() => requestDelete(selectedRecords)}>
-                  Delete selected
-                </button>
-              ) : null}
-              <button className={buttonClass} type="button" onClick={cancelSelection}>
-                Cancel selection
-              </button>
-            </>
-          ) : (
+          {!selectMode ? (
             <button className={buttonClass} type="button" onClick={() => setSelectMode(true)}>
               Select
             </button>
-          )}
+          ) : null}
           <input className={`${inputClass} sm:max-w-xs`} placeholder="Search errors" value={search} onChange={(event) => setSearch(event.target.value)} />
         </div>
       </div>
+
+      {selectMode ? (
+        <SelectionToolbar
+          selectedCount={selectedRecords.length}
+          totalVisibleCount={visibleErrorKeys.length}
+          onSelectAll={() => setSelectedErrorKeys(visibleErrorKeys)}
+          onClear={() => setSelectedErrorKeys([])}
+          onDeleteSelected={() => requestDelete(selectedRecords)}
+          onCancel={cancelSelection}
+          isDeleting={deleting}
+        />
+      ) : null}
 
       {filtered.length === 0 ? (
         <EmptyState title={combined.length === 0 ? "No errors logged" : "No errors found"} />

@@ -8,7 +8,7 @@ export function Field({ label, children }) {
 }
 
 export const inputClass =
-  "w-full rounded-md border border-line bg-panel/62 px-3 py-2 text-sm text-text outline-none transition duration-200 placeholder:text-text/32 focus:border-primary focus:bg-panel/88";
+  "h-10 w-full rounded-md border border-line bg-panel/62 px-3 text-sm text-text outline-none transition duration-200 placeholder:text-text/32 focus:border-primary focus:bg-panel/88";
 
 export const buttonClass =
-  "rounded-md border border-primary/42 bg-primary/12 px-4 py-2 text-sm font-medium text-text transition duration-200 hover:border-primary hover:bg-primary/18";
+  "inline-flex h-10 items-center justify-center rounded-md border border-primary/42 bg-primary/12 px-4 text-sm font-medium text-text transition duration-200 hover:-translate-y-0.5 hover:border-primary hover:bg-primary/18 disabled:translate-y-0 disabled:opacity-50";

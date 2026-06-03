@@ -8,7 +8,7 @@ const styles = {
 
 export function StatusPill({ status }) {
   return (
-    <span className={`rounded-full border px-2 py-1 text-xs ${styles[status] || "border-text/12 bg-text/6 text-text/62"}`}>
+    <span className={`status-pulse inline-flex h-6 items-center rounded-full border px-2.5 text-xs ${styles[status] || "border-text/12 bg-text/6 text-text/62"}`}>
       {status || "unknown"}
     </span>
   );
