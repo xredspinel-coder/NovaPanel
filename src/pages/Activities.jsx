@@ -15,6 +15,7 @@ import { ImageLightbox } from "../components/ImageLightbox.jsx";
 import { SelectionToolbar } from "../components/SelectionToolbar.jsx";
 import { useFirestoreCollection } from "../hooks/useFirestoreCollection.js";
 import { failureLabel, isTechnicalFailure, normalizeActivityStatus } from "../utils/activityTypes.js";
+import { getActivityPreviewImageCandidates, isDirectActivityImageUrl } from "../utils/activityPreviewImage.js";
 import { downloadFile } from "../utils/downloadFile.js";
 import { deleteFirestoreDocument } from "../utils/firestoreDelete.js";
 import { addDeveloperConsoleEntry } from "../utils/developerConsole.js";
@@ -672,6 +673,13 @@ function collectMedia(activity = {}) {
   const record = activity && typeof activity === "object" ? activity : {};
   const media = record.media && typeof record.media === "object" ? record.media : {};
   const botResponse = record.botResponse && typeof record.botResponse === "object" ? record.botResponse : {};
+  const previewImageSources = mediaSourceList(
+    getActivityPreviewImageCandidates(record).map((url) => [
+      url,
+      isTraceMoeUrl(url) ? "trace" : "input",
+      "activityPreviewImage"
+    ])
+  );
   const inputImageFileCandidates = uniqueTelegramFileCandidates([
     telegramFileCandidate(media.inputTelegramFileId, "media.inputTelegramFileId"),
     telegramFileCandidate(record.inputTelegramFileId, "inputTelegramFileId"),
@@ -721,14 +729,9 @@ function collectMedia(activity = {}) {
       [record.inputImageUrl, "input", "inputImageUrl"],
       [record.inputPreview, "input", "inputPreview"],
       [record.inputThumbnail, "input", "inputThumbnail"],
-      [record.inputUrl, "input", "inputUrl"]
+      [isDirectActivityImageUrl(record.inputUrl) ? record.inputUrl : null, "input", "inputUrl"]
     ]),
-    resultImageFallbackSources: mediaSourceList([
-      [media.resultImageUrl, "trace", "media.resultImageUrl"],
-      [record.resultImageUrl, "trace", "resultImageUrl"],
-      [record.imageUrl, "trace", "imageUrl"],
-      [botResponse.imageUrl, "trace", "botResponse.imageUrl"]
-    ]),
+    resultImageFallbackSources: previewImageSources,
     resultVideoFallbackSources,
     selectionDebug: {
       activityId: record.id || null,
@@ -1168,14 +1171,9 @@ function useActivityMedia(activity, { logFailures = false } = {}) {
       ...resolvedSentPhotos.sources,
       ...media.telegramImageSources
     ]);
-  const traceImageFallbackAllowed = canUseFallbackAfterTelegram({
-    hasTelegramFileId: media.sentPhotoFileCandidates.length > 0,
-    resolvedSources: telegramImageSources,
-    resolverState: resolvedSentPhotos
-  });
   const resultImageSources = uniqueMediaSources([
-      ...telegramImageSources,
-      ...(traceImageFallbackAllowed ? media.resultImageFallbackSources : [])
+      ...media.resultImageFallbackSources,
+      ...telegramImageSources
     ]);
   const telegramVideoSources = uniqueMediaSources([
       ...resolvedVideos.sources,
@@ -1268,6 +1266,46 @@ function useActivityMedia(activity, { logFailures = false } = {}) {
       loading: imageLoading,
       hasTelegramFileId: media.sentPhotoFileCandidates.length > 0
     })
+  };
+}
+
+function useActivityCardPreviewMedia(activity) {
+  const media = useMemo(() => collectMedia(activity), [activity]);
+  const debugContext = useMemo(() => ({
+    activityId: activity?.id || null,
+    mediaFieldsAvailable: mediaFieldsAvailable(activity || {}),
+    logFailures: false
+  }), [activity]);
+  const resolvedInputImages = useResolvedTelegramSources(media.inputImageFileCandidates, "input", {
+    ...debugContext,
+    attemptedSource: "activity card input Telegram file ID",
+    hasTraceFallback: media.resultImageFallbackSources.length > 0
+  });
+  const resolvedSentPhotos = useResolvedTelegramSources(media.sentPhotoFileCandidates, "telegram", {
+    ...debugContext,
+    attemptedSource: "activity card sent Telegram photo file ID",
+    hasTraceFallback: media.resultImageFallbackSources.length > 0
+  });
+  const sources = uniqueMediaSources([
+    ...media.resultImageFallbackSources,
+    ...resolvedInputImages.sources,
+    ...resolvedSentPhotos.sources,
+    ...media.inputImageFallbackSources,
+    ...media.telegramImageSources
+  ]);
+  const loading = !sources.length && (resolvedInputImages.loading || resolvedSentPhotos.loading);
+  const status = resolvedMediaStatus(sources, [resolvedInputImages, resolvedSentPhotos]);
+  const retry = useCallback(() => {
+    resolvedInputImages.retry();
+    resolvedSentPhotos.retry();
+  }, [resolvedInputImages.retry, resolvedSentPhotos.retry]);
+
+  return {
+    sources,
+    loading,
+    status,
+    retry,
+    hasVideo: media.videoFileCandidates.length || media.telegramVideoSources.length || media.resultVideoFallbackSources.length
   };
 }
 
@@ -2054,12 +2092,7 @@ function ActivityDetails({ activity, onClose, onOpenImage }) {
 }
 
 function ActivityCard({ activity, selectMode, selected, onSelect, onOpen, onDelete }) {
-  const media = collectMedia(activity);
-  const previewImageSources = uniqueMediaSources([
-    ...media.inputImageFallbackSources,
-    ...media.resultImageFallbackSources
-  ]);
-  const hasVideo = media.videoFileCandidates.length || media.telegramVideoSources.length || media.resultVideoFallbackSources.length;
+  const previewMedia = useActivityCardPreviewMedia(activity);
   const user = displayUser(activity);
   const reason = failureLabel(activity);
   const similarity = activity.similarity ?? activity.botResponse?.similarity;
@@ -2082,13 +2115,15 @@ function ActivityCard({ activity, selectMode, selected, onSelect, onOpen, onDele
     >
       <div className="relative">
         <ProgressiveImage
-          sources={previewImageSources}
+          sources={previewMedia.sources}
           alt="Activity preview"
-          loading={false}
+          loading={previewMedia.loading}
+          status={previewMedia.status}
           reason={reason}
           className="aspect-[20/9] w-full object-cover"
+          onRetry={previewMedia.retry}
         />
-        {hasVideo ? (
+        {previewMedia.hasVideo ? (
           <span className="pointer-events-none absolute right-3 top-3 inline-flex items-center gap-1 rounded-md border border-primary/30 bg-ink/80 px-2 py-1 text-xs font-medium text-primary backdrop-blur">
             <PlayCircle className="h-3.5 w-3.5 fill-current" />
             Video
