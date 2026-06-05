@@ -8,6 +8,7 @@ import { EmptyState } from "../components/EmptyState.jsx";
 const defaultSettings = {
   dailyLimit: 5,
   similarityThreshold: 80,
+  maxDiscoveredImages: 5,
   enableTwitter: true,
   enableReddit: true,
   enableFacebook: false,
@@ -129,6 +130,7 @@ export function Settings() {
     return {
       dailyLimit: Number(source.dailyLimit),
       similarityThreshold: Number(source.similarityThreshold),
+      maxDiscoveredImages: Number(source.maxDiscoveredImages),
       enableTwitter: Boolean(source.enableTwitter),
       enableReddit: Boolean(source.enableReddit),
       enableFacebook: Boolean(source.enableFacebook),
@@ -216,6 +218,14 @@ export function Settings() {
             max="100"
             suffix="%"
             onChange={(value) => patch("similarityThreshold", value)}
+          />
+          <NumberSetting
+            label="Max Discovered Images"
+            description="Maximum images shown to trusted users when they inspect images found in a link."
+            value={settings.maxDiscoveredImages}
+            min="1"
+            max="20"
+            onChange={(value) => patch("maxDiscoveredImages", value)}
           />
         </SectionCard>
 
