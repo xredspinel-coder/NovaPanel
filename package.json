@@ -5,13 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "node --check scripts/migrateActivitiesSchema.js && vite build",
     "test": "node --test",
     "preview": "vite preview"
   },
   "dependencies": {
     "@uiw/react-json-view": "^2.0.0-alpha.43",
     "firebase": "^11.1.0",
+    "firebase-admin": "^13.10.0",
     "framer-motion": "^11.15.0",
     "lucide-react": "^0.468.0",
     "plyr": "^3.7.8",

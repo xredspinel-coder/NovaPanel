@@ -15,7 +15,8 @@ import { ImageLightbox } from "../components/ImageLightbox.jsx";
 import { SelectionToolbar } from "../components/SelectionToolbar.jsx";
 import { useFirestoreCollection } from "../hooks/useFirestoreCollection.js";
 import { failureLabel, isTechnicalFailure, normalizeActivityStatus } from "../utils/activityTypes.js";
-import { getActivityPreviewImageCandidates, isDirectActivityImageUrl } from "../utils/activityPreviewImage.js";
+import { isDirectActivityImageUrl } from "../utils/activityPreviewImage.js";
+import { getActivityDashboardMedia } from "../utils/activityDashboardMedia.js";
 import { downloadFile } from "../utils/downloadFile.js";
 import { deleteFirestoreDocument } from "../utils/firestoreDelete.js";
 import { addDeveloperConsoleEntry } from "../utils/developerConsole.js";
@@ -37,9 +38,9 @@ function displayUser(activity) {
 
 const MEDIA_SOURCE_LABELS = {
   telegram: "Telegram media",
-  trace: "trace.moe fallback",
+  trace: "trace.moe debug",
   input: "input image",
-  unavailable: "unavailable"
+  unavailable: "Media preview unavailable"
 };
 
 const MEDIA_RESOLUTION_TIMEOUT_MS = 12000;
@@ -672,16 +673,23 @@ function videoDownloadFilename({ title, time, id }) {
 function collectMedia(activity = {}) {
   const record = activity && typeof activity === "object" ? activity : {};
   const media = record.media && typeof record.media === "object" ? record.media : {};
-  const botResponse = record.botResponse && typeof record.botResponse === "object" ? record.botResponse : {};
-  const previewImageSources = mediaSourceList(
-    getActivityPreviewImageCandidates(record).map((url) => [
+  const dashboardMedia = getActivityDashboardMedia(record);
+  const dashboardImageUrlSources = mediaSourceList([
+    [isTraceMoeUrl(media.dashboardImageUrl) ? null : media.dashboardImageUrl, "input", "media.dashboardImageUrl"]
+  ]);
+  const dashboardImageFallbackSources = mediaSourceList(
+    dashboardMedia.imageUrls
+      .filter((url) => url !== media.dashboardImageUrl)
+      .map((url) => [
       url,
-      isTraceMoeUrl(url) ? "trace" : "input",
-      "activityPreviewImage"
+      "input",
+      "activityDashboardMedia"
     ])
   );
   const inputImageFileCandidates = uniqueTelegramFileCandidates([
+    ...dashboardMedia.imageFileCandidates,
     telegramFileCandidate(media.inputTelegramFileId, "media.inputTelegramFileId"),
+    telegramFileCandidate(record.input?.telegramFileId, "input.telegramFileId"),
     telegramFileCandidate(record.inputTelegramFileId, "inputTelegramFileId"),
     telegramFileCandidate(record.inputFileId, "inputFileId")
   ]);
@@ -690,21 +698,17 @@ function collectMedia(activity = {}) {
     telegramFileCandidate(record.sentPhotoFileId, "sentPhotoFileId")
   ]);
   const videoFileCandidates = uniqueTelegramFileCandidates([
+    ...dashboardMedia.videoFileCandidates,
+    telegramFileCandidate(media.dashboardVideoFileId, "media.dashboardVideoFileId"),
     telegramFileCandidate(media.sentVideoFileId, "media.sentVideoFileId"),
     telegramFileCandidate(record.sentVideoFileId, "sentVideoFileId"),
     telegramFileCandidate(media.sentAnimationFileId, "media.sentAnimationFileId"),
     telegramFileCandidate(record.sentAnimationFileId, "sentAnimationFileId")
   ]);
   const telegramVideoSources = mediaSourceList([
-    [media.botVideoUrl, "telegram", "media.botVideoUrl"],
-    [record.botVideoUrl, "telegram", "botVideoUrl"]
+    [isTraceMoeUrl(media.dashboardVideoUrl) ? null : media.dashboardVideoUrl, "telegram", "media.dashboardVideoUrl"]
   ]);
-  const resultVideoFallbackSources = mediaSourceList([
-    [media.resultVideoUrl, "trace", "media.resultVideoUrl"],
-    [record.resultVideoUrl, "trace", "resultVideoUrl"],
-    [botResponse.videoUrl, "trace", "botResponse.videoUrl"],
-    [record.videoUrl, "trace", "videoUrl"]
-  ]);
+  const resultVideoFallbackSources = [];
   const selectedVideoCandidate = videoFileCandidates[0] || null;
   const selectedVideoFallback = telegramVideoSources[0] || resultVideoFallbackSources[0] || null;
 
@@ -716,22 +720,15 @@ function collectMedia(activity = {}) {
     videoFileCandidates,
     videoFileIds: videoFileCandidates.map((candidate) => candidate.fileId),
     telegramVideoSources,
-    telegramImageSources: mediaSourceList([
-      [media.botImageUrl, "telegram", "media.botImageUrl"],
-      [record.botImageUrl, "telegram", "botImageUrl"]
-    ]),
+    telegramImageSources: [],
     inputImageFallbackSources: mediaSourceList([
-      [media.inputTelegramFileUrl, "input", "media.inputTelegramFileUrl"],
-      [record.inputTelegramFileUrl, "input", "inputTelegramFileUrl"],
-      [media.extractedImageUrl, "input", "media.extractedImageUrl"],
-      [record.extractedImageUrl, "input", "extractedImageUrl"],
-      [media.inputImageUrl, "input", "media.inputImageUrl"],
-      [record.inputImageUrl, "input", "inputImageUrl"],
-      [record.inputPreview, "input", "inputPreview"],
-      [record.inputThumbnail, "input", "inputThumbnail"],
-      [isDirectActivityImageUrl(record.inputUrl) ? record.inputUrl : null, "input", "inputUrl"]
+      ...dashboardImageFallbackSources.map((source) => [source.url, source.kind, source.fieldName]),
+      [record.input?.preview, "input", "input.preview"],
+      [record.input?.thumbnail, "input", "input.thumbnail"],
+      [record.input?.selectedImageUrl, "input", "input.selectedImageUrl"],
+      [isDirectActivityImageUrl(record.input?.url || record.inputUrl) ? record.input?.url || record.inputUrl : null, "input", "input.url"]
     ]),
-    resultImageFallbackSources: previewImageSources,
+    resultImageFallbackSources: dashboardImageUrlSources,
     resultVideoFallbackSources,
     selectionDebug: {
       activityId: record.id || null,
@@ -1163,17 +1160,39 @@ function useActivityMedia(activity, { logFailures = false } = {}) {
     attemptedSource: "sent Telegram video or animation file ID",
     hasTraceFallback: media.resultVideoFallbackSources.length > 0
   });
+  const inputImageFallbackAllowed = canUseFallbackAfterTelegram({
+    hasTelegramFileId: media.inputImageFileCandidates.length > 0,
+    resolvedSources: resolvedInputImages.sources,
+    resolverState: resolvedInputImages
+  });
   const inputImageSources = uniqueMediaSources([
+      ...media.resultImageFallbackSources,
       ...resolvedInputImages.sources,
-      ...media.inputImageFallbackSources
+      ...(inputImageFallbackAllowed ? media.inputImageFallbackSources : [])
     ]);
   const telegramImageSources = uniqueMediaSources([
       ...resolvedSentPhotos.sources,
       ...media.telegramImageSources
     ]);
+  const imageFallbackAllowed = canUseFallbackAfterTelegram({
+    hasTelegramFileId: media.inputImageFileCandidates.length > 0 || media.sentPhotoFileCandidates.length > 0,
+    resolvedSources: uniqueMediaSources([
+      ...resolvedInputImages.sources,
+      ...telegramImageSources
+    ]),
+    resolverState: {
+      loading: resolvedInputImages.loading || resolvedSentPhotos.loading,
+      settled: telegramResolutionSettled(resolvedInputImages) && telegramResolutionSettled(resolvedSentPhotos),
+      status: resolvedInputImages.status === MEDIA_STATES.failed || resolvedSentPhotos.status === MEDIA_STATES.failed
+        ? MEDIA_STATES.failed
+        : MEDIA_STATES.unavailable
+    }
+  });
   const resultImageSources = uniqueMediaSources([
       ...media.resultImageFallbackSources,
-      ...telegramImageSources
+      ...resolvedInputImages.sources,
+      ...telegramImageSources,
+      ...(imageFallbackAllowed ? media.inputImageFallbackSources : [])
     ]);
   const telegramVideoSources = uniqueMediaSources([
       ...resolvedVideos.sources,
@@ -1194,10 +1213,10 @@ function useActivityMedia(activity, { logFailures = false } = {}) {
   } = splitPlayableVideoSources(rawVideoSources);
   const videoFallbackUrl = rawVideoSources.find((source) => /^https?:\/\//i.test(source.url))?.url || "";
   const inputImageLoading = resolvedInputImages.loading;
-  const imageLoading = resolvedSentPhotos.loading && !telegramImageSources.length;
+  const imageLoading = (resolvedInputImages.loading || resolvedSentPhotos.loading) && !resultImageSources.length;
   const videoLoading = resolvedVideos.loading;
   const inputImageStatus = resolvedMediaStatus(inputImageSources, [resolvedInputImages]);
-  const imageStatus = resolvedMediaStatus(resultImageSources, [resolvedSentPhotos]);
+  const imageStatus = resolvedMediaStatus(resultImageSources, [resolvedInputImages, resolvedSentPhotos]);
   const baseVideoStatus = resolvedMediaStatus(videoSources, [resolvedVideos]);
   const videoStatus = videoSources.length
     ? baseVideoStatus
@@ -1229,7 +1248,7 @@ function useActivityMedia(activity, { logFailures = false } = {}) {
     posterSources: videoSources.length ? media.resultImageFallbackSources : [],
     previewImageSources: uniqueMediaSources([
       ...resultImageSources,
-      ...(shouldShowResultImage ? media.resultImageFallbackSources : [])
+      ...(shouldShowResultImage && imageFallbackAllowed ? media.inputImageFallbackSources : [])
     ]),
     videoSources,
     rawVideoSources,
@@ -1286,11 +1305,25 @@ function useActivityCardPreviewMedia(activity) {
     attemptedSource: "activity card sent Telegram photo file ID",
     hasTraceFallback: media.resultImageFallbackSources.length > 0
   });
+  const telegramSources = uniqueMediaSources([
+    ...resolvedInputImages.sources,
+    ...resolvedSentPhotos.sources
+  ]);
+  const fallbackAllowed = canUseFallbackAfterTelegram({
+    hasTelegramFileId: media.inputImageFileCandidates.length > 0 || media.sentPhotoFileCandidates.length > 0,
+    resolvedSources: telegramSources,
+    resolverState: {
+      loading: resolvedInputImages.loading || resolvedSentPhotos.loading,
+      settled: telegramResolutionSettled(resolvedInputImages) && telegramResolutionSettled(resolvedSentPhotos),
+      status: resolvedInputImages.status === MEDIA_STATES.failed || resolvedSentPhotos.status === MEDIA_STATES.failed
+        ? MEDIA_STATES.failed
+        : MEDIA_STATES.unavailable
+    }
+  });
   const sources = uniqueMediaSources([
     ...media.resultImageFallbackSources,
-    ...resolvedInputImages.sources,
-    ...resolvedSentPhotos.sources,
-    ...media.inputImageFallbackSources,
+    ...telegramSources,
+    ...(fallbackAllowed ? media.inputImageFallbackSources : []),
     ...media.telegramImageSources
   ]);
   const loading = !sources.length && (resolvedInputImages.loading || resolvedSentPhotos.loading);
@@ -1380,7 +1413,7 @@ function MediaFallback({
 }) {
   const isResolving = status === MEDIA_STATES.resolving;
   const isFailed = status === MEDIA_STATES.failed;
-  const resolvedTitle = title || (isResolving ? "Resolving media..." : isFailed ? "Could not load media" : "Media unavailable");
+  const resolvedTitle = title || (isResolving ? "Resolving media..." : isFailed ? "Could not load media" : "Media preview unavailable");
   const heightClass = compact ? "min-h-36" : "aspect-video";
 
   if (isResolving) {

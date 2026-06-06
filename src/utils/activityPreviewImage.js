@@ -1,9 +1,6 @@
-const DIRECT_IMAGE_EXTENSION_PATTERN = /\.(?:avif|bmp|gif|jpe?g|png|svg|webp)(?:[?#].*)?$/i;
-const TRACE_MOE_IMAGE_PATTERN = /^https:\/\/api\.trace\.moe\/image\//i;
+import { getActivityDashboardMedia, isTraceMoeMediaUrl } from "./activityDashboardMedia.js";
 
-function asRecord(value) {
-  return value && typeof value === "object" ? value : {};
-}
+const DIRECT_IMAGE_EXTENSION_PATTERN = /\.(?:avif|bmp|gif|jpe?g|png|svg|webp)(?:[?#].*)?$/i;
 
 function normalizeUrl(value) {
   const normalized = typeof value === "string" ? value.trim() : "";
@@ -35,7 +32,11 @@ export function isDirectActivityImageUrl(url) {
     return false;
   }
 
-  if (/^data:image\//i.test(normalized) || TRACE_MOE_IMAGE_PATTERN.test(normalized)) {
+  if (isTraceMoeMediaUrl(normalized)) {
+    return false;
+  }
+
+  if (/^data:image\//i.test(normalized)) {
     return true;
   }
 
@@ -53,20 +54,7 @@ export function isDirectActivityImageUrl(url) {
 }
 
 export function getActivityPreviewImageCandidates(activity = {}) {
-  const record = asRecord(activity);
-  const media = asRecord(record.media);
-  const botResponse = asRecord(record.botResponse);
-
-  return uniqueOrderedUrls([
-    media.resultImageUrl,
-    record.imageUrl,
-    botResponse.imageUrl,
-    media.botImageUrl,
-    record.inputPreview,
-    record.inputThumbnail,
-    record.inputImageUrl,
-    isDirectActivityImageUrl(record.inputUrl) ? record.inputUrl : null
-  ]);
+  return uniqueOrderedUrls(getActivityDashboardMedia(activity).imageUrls);
 }
 
 export function getActivityPreviewImage(activity = {}) {
